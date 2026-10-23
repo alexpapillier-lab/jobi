@@ -506,6 +506,17 @@ export type CekajiciOdmena = {
   /** Současný stav zakázky (klíč a název). */
   stav: string | null;
   stavNazev: string | null;
+  /**
+   * Zamítnuto správcem (odmeny_upravy.vyrazeno) – po vydání se nezapočte.
+   * Vrací jen server s migrací 20261023190000 (jen správci); null = server
+   * to neříká a zamítat se v sekci nedá.
+   */
+  vyrazeno: boolean | null;
+  /** Poznámka / důvod z odmeny_upravy. */
+  poznamka: string | null;
+  /** Správce přepsal příjemce / příznak nabídnuto – při vrácení se nesmí ztratit. */
+  prepsano: boolean;
+  nabidnutoPrepsano: boolean;
 };
 
 /** Tolerantní čtení `cekajiciNaZapocteni`; starší server pole nemá = prázdný seznam. */
@@ -532,6 +543,10 @@ export function normalizujCekajiciNaZapocteni(raw: unknown): CekajiciOdmena[] {
       castka: cislo(r.castka),
       stav: textNeboNull(r.stav),
       stavNazev: textNeboNull(r.stavNazev),
+      vyrazeno: typeof r.vyrazeno === "boolean" ? r.vyrazeno : null,
+      poznamka: textNeboNull(r.poznamka),
+      prepsano: r.prepsano === true,
+      nabidnutoPrepsano: r.nabidnutoPrepsano === true,
     });
   }
   return vysledek;

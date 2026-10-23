@@ -33,6 +33,13 @@
 --      `pobocka` vrací, za kterou pobočku čísla jsou (podle klíče klient
 --      pozná, že server filtr umí).
 --   Vyplácení (odmeny_vyplaty) zůstává za člověka a měsíc za celý servis.
+--   4) Zamítnutí v „Čeká na vydání“ (majitel: „bylo by fajn, kdyby byla
+--      možnost je zamítnout“): správce u čekající položky zapíše
+--      odmeny_upravy.vyrazeno = true (stejný mechanismus jako Vyřadit
+--      u započtených řádků; práva beze změny). cekajiciNaZapocteni pak
+--      vyřazenou položku správci dál vrací s `vyrazeno: true` (a poznamka,
+--      prepsano, nabidnutoPrepsano), aby šla vrátit; člen ji nevidí. Po
+--      vydání se vyřazená nezapočte – součty berou jen `not vyrazeno`.
 --
 -- Vychází z 20261023170000_odmeny_ceka_na_vydani.sql (odmeny_prehled) a
 -- 20261009140000_odmeny_poznamka_nepovinna.sql (odmeny_rucni_pridat), obě
@@ -462,7 +469,9 @@ begin
     select * from prirazene p
     where p.zapocteno_at is null
       and p.nabidnuto
-      and not p.vyrazeno
+      -- zamítnutí: vyřazenou (zamítnutou) čekající položku vidí jen správce,
+      -- označenou, aby ji mohl vrátit; člen ji nevidí.
+      and (not p.vyrazeno or v_admin)
       and (v_admin or (
         p.komu_uid = v_uid
         and public.zakazka_viditelna_podle_mista(p_service_id, p.branch_id, p.location_branch_id)
@@ -647,7 +656,11 @@ begin
         'polozkaId', c.polozka_id, 'oprava', c.oprava, 'cena', c.cena,
         'pravidloId', c.pravidlo_id, 'pravidlo', c.pravidlo,
         'userId', c.komu_uid, 'jmeno', j.jmeno, 'castka', c.castka,
-        'stav', c.stav, 'stavNazev', c.stav_nazev
+        'stav', c.stav, 'stavNazev', c.stav_nazev,
+        -- zamítnutí: stav úpravy správce, ať ji stránka zobrazí a umí vrátit
+        -- bez ztráty přepsaného příjemce / příznaku nabídnuto.
+        'vyrazeno', c.vyrazeno, 'poznamka', c.poznamka,
+        'prepsano', c.prepsano, 'nabidnutoPrepsano', c.nabidnuto_prepsano
       ) order by c.code desc nulls last, c.polozka_id)
       from cekajici_zapocteni c
       left join jmena j on j.user_id = c.komu_uid

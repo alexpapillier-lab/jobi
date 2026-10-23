@@ -202,6 +202,8 @@ test("označená oprava z příjmu čeká na vydání, po vydání se připíše
     // Pole přidává migrace 20261023170000. Dokud není v produkci (e2e jede
     // proti ní), tahle část se výslovně přeskočí – ne potichu.
     const serverUmi = Array.isArray(prehled.cekajiciNaZapocteni);
+    // Zamítnutí v Čeká na vydání vrací server s migrací 20261023190000 (pole `vyrazeno` u položky).
+    let zamitaniUmi = false;
     if (serverUmi) {
       await expect(ceka).toContainText("Čeká na vydání", { timeout: 20_000 });
       await expect(ceka).toContainText(kod);
@@ -218,6 +220,27 @@ test("označená oprava z příjmu čeká na vydání, po vydání se připíše
       await expect(dialog.getByTestId("odmena-dvoji")).toContainText(oprava, { timeout: 20_000 });
       await dialog.getByRole("button", { name: "Zrušit" }).click();
       await expect(dialog).toHaveCount(0);
+
+      // Majitel: „bylo by fajn, kdyby byla možnost je zamítnout“. Správce
+      // zamítne (s důvodem), vrátí a znovu zamítne – po vydání se nezapočte.
+      const polozky = (prehled.cekajiciNaZapocteni as Record<string, unknown>[]).filter((c) => c.kod === kod);
+      zamitaniUmi = polozky.length > 0 && polozky.every((c) => "vyrazeno" in c);
+      if (zamitaniUmi) {
+        const radek = ceka.getByTestId("ceka-radek").filter({ hasText: kod });
+        await expect(ceka).toContainText("zamítněte ji");
+        await radek.getByRole("button", { name: "Zamítnout", exact: true }).click();
+        await radek.getByLabel("Důvod zamítnutí").fill("E2E nenabídnuto");
+        await radek.getByRole("button", { name: "Zamítnout", exact: true }).click();
+        await expect(radek).toHaveAttribute("data-zamitnuto", "ano", { timeout: 20_000 });
+        await expect(radek).toContainText("Zamítnuto · E2E nenabídnuto");
+        await radek.getByRole("button", { name: "Vrátit", exact: true }).click();
+        await expect(radek).not.toHaveAttribute("data-zamitnuto", "ano", { timeout: 20_000 });
+        await radek.getByRole("button", { name: "Zamítnout", exact: true }).click();
+        await radek.getByRole("button", { name: "Zamítnout", exact: true }).click();
+        await expect(radek).toHaveAttribute("data-zamitnuto", "ano", { timeout: 20_000 });
+      } else {
+        test.info().annotations.push({ type: "přeskočeno", description: "Server ještě nevrací zamítnuté čekající (migrace 20261023190000 není nasazená) – zamítnutí v Čeká na vydání se ověřilo jen sondou 1766." });
+      }
     } else {
       test.info().annotations.push({ type: "přeskočeno", description: "Server ještě nevrací cekajiciNaZapocteni (migrace 20261023170000 není nasazená) – sekce Čeká na vydání a varování se neověřily." });
     }
@@ -239,7 +262,13 @@ test("označená oprava z příjmu čeká na vydání, po vydání se připíše
     await zavriDetail(page);
 
     // Po vydání: řádek v tabulce tohoto měsíce, v čekajících už není.
-    await otevriStrankuOdmeny(page);
+    const poVydani = await otevriStrankuOdmeny(page);
+    if (zamitaniUmi) {
+      // Zamítnutá před vydáním zůstane vyřazená – do součtů se nezapočte.
+      const radkyKodu = ((poVydani.radky ?? []) as Record<string, unknown>[]).filter((r) => r.kod === kod);
+      expect(radkyKodu.length).toBeGreaterThan(0);
+      expect(radkyKodu.every((r) => r.vyrazeno === true), "zamítnutá odměna je po vydání vyřazená").toBe(true);
+    }
     await expect(radky).toContainText(kod, { timeout: 20_000 });
     await expect(radky).toContainText(oprava);
     // Sekce bez dalších čekajících zmizí úplně – stačí, že v ní zakázka není.

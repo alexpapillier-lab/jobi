@@ -29,6 +29,8 @@ import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
  * Čeká na vydání (migrace 20261023170000): označené opravy, které se ještě
  * nezapočetly (zakázka není vydaná / nedosáhla stavu). Bez nich člověk po
  * zaškrtnutí „Nabídnuto navíc“ nic neviděl a zadal odměnu ještě ručně.
+ * Správce může čekající položku zamítnout (odmeny_upravy.vyrazeno, migrace
+ * 20261023190000) – po vydání se nezapočte; Vrátit to zruší.
  *
  * Rozvržení (23. 10. 2026, majitel: „není pochopitelný, kde se má co
  * schvalovat“): shora Ke schválení (jediné místo se schvalováním, u správce
@@ -228,11 +230,19 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     [data, filtrClovek]
   );
   const autoSchvaleni = useMemo(() => new Set(data?.autoSchvaleni ?? []), [data]);
-  const mojeCeka = useMemo(() => (data?.cekajiciNaZapocteni ?? []).filter((c) => !!c.userId && c.userId === data?.ja).reduce((s, c) => s + c.castka, 0), [data]);
+  const mojeCeka = useMemo(() => (data?.cekajiciNaZapocteni ?? []).filter((c) => !c.vyrazeno && !!c.userId && c.userId === data?.ja).reduce((s, c) => s + c.castka, 0), [data]);
+  /** Čeká na vydání: platné nahoře, zamítnuté (jen správce) pod nimi, ať jdou vrátit. */
   const cekajiciZobrazene = useMemo(
-    () => (data?.cekajiciNaZapocteni ?? []).filter((c) => filtrClovek === "vse" || (c.userId ?? "") === filtrClovek),
+    () => (data?.cekajiciNaZapocteni ?? [])
+      .filter((c) => filtrClovek === "vse" || (c.userId ?? "") === filtrClovek)
+      .sort((a, b) => Number(!!a.vyrazeno) - Number(!!b.vyrazeno)),
     [data, filtrClovek]
   );
+  const cekajiciPlatne = useMemo(() => cekajiciZobrazene.filter((c) => !c.vyrazeno), [cekajiciZobrazene]);
+  /** Zamítat jde jen se serverem, který zamítnuté čekající vrací (migrace 20261023190000) – jinak by položka zmizela a nešla vrátit. */
+  const cekajiciJdeZamitat = !!data?.admin && cekajiciZobrazene.some((c) => c.vyrazeno !== null);
+  /** Čekající položka, u které správce právě píše důvod zamítnutí („ticketId:polozkaId“). */
+  const [zamitamCekajici, setZamitamCekajici] = useState<{ klic: string; duvod: string } | null>(null);
   /** Nápověda u data v tabulce: podle čeho se odměna počítá do měsíce. */
   const titulekZapocteno = data?.kdy.rezim === "pridani"
     ? "Kdy byla oprava přidána na zakázku"
@@ -303,6 +313,23 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
       ? await tab.delete().eq("ticket_id", r.ticketId).eq("polozka_id", r.polozkaId)
       : await tab.upsert({ service_id: activeServiceId, ticket_id: r.ticketId, polozka_id: r.polozkaId, user_id: userId, vyrazeno, nabidnuto, updated_by: data.ja, updated_at: new Date().toISOString() }, { onConflict: "ticket_id,polozka_id" });
     if (error) { showToast(`Uložení selhalo: ${error.message}`, "error"); return; }
+    void nacti();
+  }, [activeServiceId, data, nacti]);
+
+  /* Čeká na vydání: zamítnutí = odmeny_upravy.vyrazeno (jako Vyřadit u
+     započtených řádků), po vydání se odměna nezapočte. Posílá se jen vyrazeno
+     a poznámka – upsert mění jen poslané sloupce, takže přepsaný příjemce
+     a příznak nabídnuto zůstanou. */
+  const zamitniCekajici = useCallback(async (c: CekajiciOdmena, vyrazeno: boolean, duvod?: string) => {
+    if (!supabase || !activeServiceId || !data?.admin) return;
+    // deno-lint-ignore no-explicit-any
+    const tab = (supabase as any).from("odmeny_upravy");
+    const { error } = !vyrazeno && !c.prepsano && !c.nabidnutoPrepsano
+      ? await tab.delete().eq("ticket_id", c.ticketId).eq("polozka_id", c.polozkaId)
+      : await tab.upsert({ service_id: activeServiceId, ticket_id: c.ticketId, polozka_id: c.polozkaId, vyrazeno, poznamka: vyrazeno ? (duvod?.trim() || null) : null, updated_by: data.ja, updated_at: new Date().toISOString() }, { onConflict: "ticket_id,polozka_id" });
+    if (error) { showToast(`Uložení selhalo: ${error.message}`, "error"); return; }
+    setZamitamCekajici(null);
+    showToast(vyrazeno ? "Odměna zamítnuta – po vydání se nezapočte." : "Odměna vrácena – po vydání se připíše.", "success");
     void nacti();
   }, [activeServiceId, data, nacti]);
 
@@ -523,27 +550,31 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
         </Sekce>
       )}
 
-      {/* ── 2. Čeká na vydání: jen informace, nic se neschvaluje ─────────── */}
+      {/* ── 2. Čeká na vydání: připíše se samo, správce může zamítnout ────── */}
       {data && cekajiciZobrazene.length > 0 && (
         <Sekce
           dataTour="odmeny-ceka"
           nadpis={nadpisCekajicich(data.kdy.rezim, data.kdy.stavNazev)}
-          pocet={cekajiciZobrazene.length}
-          souhrn={kc(cekajiciZobrazene.reduce((s, c) => s + c.castka, 0))}
-          popis={`Jen pro informaci, nic se tu neschvaluje. Označené opravy jsou zaevidované a odměna se připíše sama ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát.`}
+          pocet={cekajiciPlatne.length}
+          souhrn={kc(cekajiciPlatne.reduce((s, c) => s + c.castka, 0))}
+          popis={cekajiciJdeZamitat
+            ? `Označené opravy jsou zaevidované a odměna se připíše sama ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát. Schvalovat nic nemusíte; jen když odměna platit nemá (oprava nebyla nabídnutá navíc), zamítněte ji – po vydání se nezapočte. Vrátit to jde kdykoli.`
+            : `Jen pro informaci, nic se tu neschvaluje. Označené opravy jsou zaevidované a odměna se připíše sama ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát.`}
         >
           <div style={{ overflowX: "auto", border, borderRadius: 12, background: "var(--panel)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Zakázka", "Stav teď", "Oprava", "Pravidlo", ...(data.admin ? ["Komu"] : []), "Odměna"].map((h) => (
-                    <th key={h} style={th}>{h}</th>
+                  {["Zakázka", "Stav teď", "Oprava", "Pravidlo", ...(data.admin ? ["Komu"] : []), "Odměna", ...(cekajiciJdeZamitat ? [""] : [])].map((h, i) => (
+                    <th key={`${h}-${i}`} style={th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {cekajiciZobrazene.map((c) => (
-                  <tr key={`${c.ticketId}-${c.polozkaId}`}>
+                {cekajiciZobrazene.map((c) => {
+                  const klic = `${c.ticketId}:${c.polozkaId}`;
+                  return (
+                  <tr key={`${c.ticketId}-${c.polozkaId}`} data-testid="ceka-radek" data-zamitnuto={c.vyrazeno ? "ano" : undefined} style={{ opacity: c.vyrazeno ? 0.6 : 1 }}>
                     <td style={{ ...td, fontWeight: 700 }}>
                       <button type="button" onClick={() => otevriZakazku(c.ticketId)} style={{ ...odkaz, fontSize: 13 }}>{c.kod ?? "Zakázka"}</button>
                       <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[c.zakaznik, c.zarizeni].filter(Boolean).join(" · ")}</div>
@@ -552,9 +583,30 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
                     <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={c.oprava}>{c.oprava}</td>
                     <td style={{ ...td, color: "var(--muted)" }}>{c.pravidlo}</td>
                     {data.admin && <td style={td}>{c.jmeno ?? "Nepřiřazeno"}</td>}
-                    <td style={{ ...td, fontWeight: 700 }}>{kc(c.castka)}</td>
+                    <td style={{ ...td, fontWeight: 700, textDecoration: c.vyrazeno ? "line-through" : undefined }}>{kc(c.castka)}</td>
+                    {cekajiciJdeZamitat && (
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        {c.vyrazeno ? (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontWeight: 600, color: "rgba(239,68,68,0.9)" }} title={c.poznamka ?? undefined}>
+                              Zamítnuto{c.poznamka ? ` · ${c.poznamka}` : ""}
+                            </span>
+                            <Button size="sm" variant="ghost" onClick={() => void zamitniCekajici(c, false)}>Vrátit</Button>
+                          </div>
+                        ) : zamitamCekajici?.klic === klic ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input value={zamitamCekajici.duvod} onChange={(e) => setZamitamCekajici({ klic, duvod: e.target.value })} placeholder="Důvod (nepovinné)" aria-label="Důvod zamítnutí" style={{ ...pole, width: 160 }} autoFocus />
+                            <Button size="sm" variant="danger" onClick={() => void zamitniCekajici(c, true, zamitamCekajici.duvod)}>Zamítnout</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setZamitamCekajici(null)}>Zpět</Button>
+                          </div>
+                        ) : (
+                          <Button size="sm" variant="soft" onClick={() => setZamitamCekajici({ klic, duvod: "" })} title="Odměna za tuhle opravu platit nemá – po vydání se nezapočte">Zamítnout</Button>
+                        )}
+                      </td>
+                    )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -257,6 +257,15 @@ describe("čeká na vydání", () => {
     ]);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ ticketId: "t1", kod: "IRP1", cena: 500, castka: 100, userId: null, jmeno: null, stavNazev: "V opravě" });
+    // Starší server neříká, jestli je položka zamítnutá – zamítat se nedá.
+    expect(c[0]).toMatchObject({ vyrazeno: null, poznamka: null, prepsano: false, nabidnutoPrepsano: false });
+  });
+
+  it("zamítnutá čekající položka (jen správci) nese stav úpravy", () => {
+    const [z] = normalizujCekajiciNaZapocteni([
+      { ticketId: "t1", polozkaId: "p1", castka: 100, vyrazeno: true, poznamka: "Zákazník nechtěl", prepsano: true, nabidnutoPrepsano: true },
+    ]);
+    expect(z).toMatchObject({ vyrazeno: true, poznamka: "Zákazník nechtěl", prepsano: true, nabidnutoPrepsano: true });
   });
 });
 
