@@ -382,6 +382,10 @@ test("stránka Odměny se řídí pobočkou z horní lišty", async ({ page }) =
       await expect(page.getByText(new RegExp(`${nazev} · .* – přidáno`)).first()).toBeVisible({ timeout: 20_000 });
       const rucni = page.locator('[data-tour="odmeny-rucni"]');
       await expect(rucni).toContainText(nazev, { timeout: 20_000 });
+      // Trvalá hláška „přidáno / Vzít zpět“ leží přes pobočky v horní liště – zavřít.
+      // (Trvalá hláška má role="alert", ostatní role="button".)
+      await page.getByRole("alert").filter({ hasText: new RegExp(`${nazev} · .* – přidáno`) }).first()
+        .getByRole("button", { name: "Zavřít" }).click({ timeout: 10_000 });
       await prepniPobockuNaOdmenach(page, POBOCKY.hlavni);
       await expect(page.locator(`[data-tour="odmeny-rucni"]:has-text("${nazev}")`)).toHaveCount(0);
       await expect(ceka).toContainText(kod);
