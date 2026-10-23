@@ -156,7 +156,8 @@ export function otevritStitek(base64: string, nazev: string): void {
 
 export function stavDpdText(o: Pick<ObjednavkaDpd, "status" | "mode" | "pickupDate">): string {
   switch (o.status) {
-    case "created": return o.mode === "label" ? "štítek připraven – podejte na výdejním místě DPD" : "zásilka založena, svoz neobjednán";
+    // Kam s krabicí záleží na variantě – pokyn je ve statusText z funkce.
+    case "created": return o.mode === "label" ? "štítek připraven" : "zásilka založena, svoz neobjednán";
     case "pickup_ordered": return o.pickupDate ? `kurýr objednán na ${new Date(`${o.pickupDate}T12:00:00`).toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric", month: "numeric" })}` : "kurýr objednán";
     case "in_transit": return "na cestě";
     case "delivered": return "doručeno";
