@@ -5,7 +5,10 @@ import {
   coChybiPobocce,
   dnySvozu,
   idSvozu,
+  jdeTisknoutStitek,
   mestoProDpd,
+  registrovanaAdresa,
+  variantyZasilky,
   rozdelUlici,
   stavZTrackingu,
   teloZasilky,
@@ -53,17 +56,41 @@ describe("zásilka DPD", () => {
   const a = adresaPobocky(praha, "iSwap")!;
   const b = adresaPobocky(brno, "iSwap")!;
 
-  it("štítek = Return s dpdReturn, kurýr = Collection; plátce z registrované adresy", () => {
-    const [stitek] = teloZasilky({ dsw: "15500476", rezim: "label", balicku: 2, reference: "Z-0016", poznamka: "křehké", odesilatel: a, prijemce: b, adresaPlatce: { it4emId: 77 } }) as any[];
+  it("z neregistrované pobočky: štítek = Return s dpdReturn, kurýr = Collection; plátce z registrované adresy", () => {
+    const [stitek] = teloZasilky({ dsw: "15500476", varianta: "return", balicku: 2, reference: "Z-0016", poznamka: "křehké", odesilatel: a, prijemce: b, adresaPlatce: { it4emId: 77 } }) as any[];
     expect(stitek.shipmentType).toBe("Return");
     expect(stitek.services).toEqual({ dpdReturn: true });
     expect(stitek.parcels).toHaveLength(2);
     expect(stitek.references).toEqual({ ref1: "Z-0016", ref2: "křehké" });
     expect(stitek.payer).toEqual({ customer: { dsw: "15500476" }, customerAddress: { it4emId: 77 } });
-    const [kuryr] = teloZasilky({ dsw: "1", rezim: "courier", balicku: 1, reference: "Z-0001", odesilatel: a, prijemce: b, adresaPlatce: { id: 5 } }) as any[];
+    const [kuryr] = teloZasilky({ dsw: "1", varianta: "collection", balicku: 1, reference: "Z-0001", odesilatel: a, prijemce: b, adresaPlatce: { id: 5 } }) as any[];
     expect(kuryr.shipmentType).toBe("Collection");
     expect(kuryr.services).toBeUndefined();
     expect(kuryr.references).toEqual({ ref1: "Z-0001" });
+  });
+
+  it("z registrované adresy účtu: Standard + Shop to Home, odesílatel = registrovaná adresa", () => {
+    const [shop] = teloZasilky({ dsw: "9", varianta: "standard_shop", balicku: 1, reference: "Z-0011", odesilatel: a, prijemce: b, registrovana: { it4emId: 77 }, adresaPlatce: { it4emId: 77 } }) as any[];
+    expect(shop.shipmentType).toBe("Standard");
+    expect(shop.sender).toEqual({ it4emId: 77 });
+    expect(shop.payer).toEqual({ customer: { dsw: "9" } });
+    expect(shop.services).toEqual({ shopToHome: true });
+    const [std] = teloZasilky({ dsw: "9", varianta: "standard", balicku: 1, reference: "Z-0011", odesilatel: a, prijemce: b, registrovana: { it4emId: 77 }, adresaPlatce: { it4emId: 77 } }) as any[];
+    expect(std.services).toBeUndefined();
+    expect(() => teloZasilky({ dsw: "9", varianta: "standard", balicku: 1, reference: "Z", odesilatel: a, prijemce: b, registrovana: null, adresaPlatce: a })).toThrow();
+  });
+
+  it("varianty podle registrované adresy a tisk štítku", () => {
+    expect(variantyZasilky("label", true)).toEqual(["standard_shop", "standard"]);
+    expect(variantyZasilky("courier", true)).toEqual(["standard"]);
+    expect(variantyZasilky("label", false)).toEqual(["return"]);
+    expect(variantyZasilky("courier", false)).toEqual(["collection"]);
+    expect(jdeTisknoutStitek("collection")).toBe(false);
+    expect(jdeTisknoutStitek("standard")).toBe(true);
+    const seznam = [{ it4emId: 5, address: { postalCode: "16000", street: "U Vokovické školy" } }];
+    expect(registrovanaAdresa(seznam, "160 00")).toEqual({ it4emId: 5 });
+    expect(registrovanaAdresa(seznam, "61300")).toBeNull();
+    expect(registrovanaAdresa(seznam, "")).toBeNull();
   });
 
   it("plátce: it4emId podle PSČ hlavní pobočky, jinak id, jinak fyzická adresa", () => {

@@ -15,6 +15,8 @@ export type ObjednavkaDpd = {
   id: string;
   shipmentId: string;
   mode: RezimDpd;
+  /** standard_shop / standard / return / collection; starší objednávky null. */
+  varianta: string | null;
   parcels: number;
   testovaci: boolean;
   parcelNumbers: string[];
@@ -30,13 +32,14 @@ export type ObjednavkaDpd = {
 
 export type NastaveniDpd = { serviceId: string; zapnuto: boolean; dsw: string | null; testovaci: boolean; maKlic: boolean; updatedAt: string | null };
 
-const SLOUPCE = "id, shipment_id, mode, parcels, testovaci, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, cancelled_at";
+const SLOUPCE = "id, shipment_id, mode, varianta, parcels, testovaci, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, cancelled_at";
 
 function mapObjednavka(r: Record<string, any>): ObjednavkaDpd {
   return {
     id: String(r.id),
     shipmentId: String(r.shipment_id),
     mode: r.mode === "courier" ? "courier" : "label",
+    varianta: r.varianta ?? null,
     parcels: Number(r.parcels) || 1,
     testovaci: !!r.testovaci,
     parcelNumbers: Array.isArray(r.parcel_numbers) ? r.parcel_numbers.map(String) : [],
@@ -159,6 +162,11 @@ export function stavDpdText(o: Pick<ObjednavkaDpd, "status" | "mode" | "pickupDa
     case "delivered": return "doručeno";
     case "cancelled": return "zrušeno";
   }
+}
+
+/** Štítek jde tisknout u všeho kromě svozu z adresy pobočky (Collection) – ten přiveze kurýr. */
+export function maStitek(o: Pick<ObjednavkaDpd, "varianta" | "mode">): boolean {
+  return (o.varianta ?? (o.mode === "courier" ? "collection" : "return")) !== "collection";
 }
 
 /** Zrušit jde jen dokud se balík nehnul. */

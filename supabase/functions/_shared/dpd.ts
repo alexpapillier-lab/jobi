@@ -6,11 +6,44 @@
  * stejný plátce i postup objednání svozu. Tady jen to, co jde testovat bez
  * sítě; volání DPD dělá edge funkce zasilka-dpd.
  *
- *   štítek  = shipmentType „Return“ + služba dpdReturn → podání na výdejním místě
- *   kurýr   = shipmentType „Collection“ + objednávka svozu na den
+ * Varianta podle toho, jestli je pobočka odeslání registrovaná adresa DPD
+ * účtu (u iSwapu Praha ano, Brno ne – zjištěno na servis.iswap 23. 10.):
+ *
+ *   registrovaná, štítek  = „Standard“ + shopToHome (podání ve výdejně i
+ *                           předání kurýrovi); když DPD Shop to Home odmítne,
+ *                           čistý „Standard“ (jen předat kurýrovi)
+ *   registrovaná, kurýr   = „Standard“ + svoz na registrovanou adresu
+ *   jiná, štítek          = „Return“ + dpdReturn (jen výdejní místo)
+ *   jiná, kurýr           = „Collection“ + svoz z adresy pobočky (štítek
+ *                           přiveze kurýr, tisk DPD odmítá)
  */
 
 export type RezimDpd = "label" | "courier";
+export type VariantaDpd = "standard_shop" | "standard" | "return" | "collection";
+
+/** Identifikace registrované adresy DPD účtu ({ it4emId } nebo { id }). */
+export type RegistrovanaAdresa = { it4emId: string | number } | { id: string | number };
+
+/** Varianty v pořadí, ve kterém se zkouší (další jen když DPD předchozí odmítne). */
+export function variantyZasilky(rezim: RezimDpd, registrovana: boolean): VariantaDpd[] {
+  if (registrovana) return rezim === "label" ? ["standard_shop", "standard"] : ["standard"];
+  return [rezim === "label" ? "return" : "collection"];
+}
+
+/** Jde k variantě vytisknout štítek? U Collection ho přiveze kurýr (DPD tisk odmítá). */
+export function jdeTisknoutStitek(varianta: VariantaDpd | null | undefined): boolean {
+  return varianta !== "collection";
+}
+
+/** Co s balíkem udělat – ukáže se u objednávky, dokud DPD nepošle první pohyb. */
+export function predaniText(varianta: VariantaDpd, rezim: RezimDpd): string {
+  switch (varianta) {
+    case "standard_shop": return "Štítek předejte kurýrovi, nebo podejte na výdejním místě DPD.";
+    case "standard": return rezim === "label" ? "Štítek předejte kurýrovi (Shop to Home DPD odmítlo – ve výdejně nepodávat)." : "Kurýr vyzvedne na pobočce, štítek nalepte na krabici.";
+    case "return": return "Štítek podejte na výdejním místě DPD (kurýr ho nenačte).";
+    case "collection": return "Kurýr vyzvedne na pobočce a štítek přiveze.";
+  }
+}
 
 export type PobockaProDpd = {
   name: string;
@@ -78,27 +111,43 @@ export function coChybiPobocce(b: PobockaProDpd): string[] {
 
 export function teloZasilky(p: {
   dsw: string;
-  rezim: RezimDpd;
+  varianta: VariantaDpd;
   balicku: number;
   reference: string;
   poznamka?: string;
   odesilatel: AdresaDpd;
   prijemce: AdresaDpd;
+  /** Registrovaná adresa účtu – odesílatel u Standard zásilek. */
+  registrovana?: RegistrovanaAdresa | null;
+  /** Plátce u Return/Collection (příjemce není adresa účtu). */
   adresaPlatce: AdresaPlatce;
 }): unknown[] {
   const poznamka = (p.poznamka ?? "").trim().slice(0, 35);
-  return [{
+  const zaklad = {
     customer: { dsw: p.dsw },
     deliveryOptions: { completeness: "CompleteOnly" },
-    shipmentType: p.rezim === "courier" ? "Collection" : "Return",
     references: { ref1: p.reference, ...(poznamka ? { ref2: poznamka } : {}) },
-    sender: p.odesilatel,
     receiver: p.prijemce,
-    // Příjemce (druhá pobočka) není adresa DPD účtu → plátce s registrovanou adresou.
-    payer: { customer: { dsw: p.dsw }, customerAddress: p.adresaPlatce },
     // Váhu DPD nevyžaduje – 1 kg na balík jako na servis.iswap.
     parcels: Array.from({ length: p.balicku }, () => ({ references: { ref1: p.reference }, weightGrams: 1000 })),
-    ...(p.rezim === "label" ? { services: { dpdReturn: true } } : {}),
+  };
+  if (p.varianta === "standard_shop" || p.varianta === "standard") {
+    if (!p.registrovana) throw new Error("Standard zásilka potřebuje registrovanou adresu DPD účtu.");
+    return [{
+      ...zaklad,
+      shipmentType: "Standard",
+      sender: p.registrovana,
+      payer: { customer: { dsw: p.dsw } },
+      ...(p.varianta === "standard_shop" ? { services: { shopToHome: true } } : {}),
+    }];
+  }
+  return [{
+    ...zaklad,
+    shipmentType: p.varianta === "collection" ? "Collection" : "Return",
+    sender: p.odesilatel,
+    // Příjemce (druhá pobočka) není adresa DPD účtu → plátce s registrovanou adresou.
+    payer: { customer: { dsw: p.dsw }, customerAddress: p.adresaPlatce },
+    ...(p.varianta === "return" ? { services: { dpdReturn: true } } : {}),
   }];
 }
 
@@ -112,7 +161,25 @@ export function cislaBaliku(odpoved: unknown): { shipmentId: string; parcelNumbe
 }
 
 /** Adresa plátce: registrovaná adresa DPD účtu (it4emId, jinak id), nebo fyzická adresa. */
-export type AdresaPlatce = { it4emId: string | number } | { id: string | number } | AdresaDpd;
+export type AdresaPlatce = RegistrovanaAdresa | AdresaDpd;
+
+function aktivniAdresy(seznam: unknown): any[] {
+  return ((Array.isArray(seznam) ? seznam : (seznam as any)?.items ?? []) as any[]).filter((a) => a?.isActive !== false);
+}
+
+function identAdresy(a: any): RegistrovanaAdresa | null {
+  if (a?.it4emId != null) return { it4emId: a.it4emId };
+  if (a?.id != null) return { id: a.id };
+  return null;
+}
+
+/** Je pobočka (podle PSČ) registrovaná adresa DPD účtu? Vrací její identifikaci. */
+export function registrovanaAdresa(seznam: unknown, psc: string | null | undefined): RegistrovanaAdresa | null {
+  const p = String(psc ?? "").replace(/\s/g, "");
+  if (!/^\d{5}$/.test(p)) return null;
+  const a = aktivniAdresy(seznam).find((x) => JSON.stringify(x).replace(/\s/g, "").includes(p));
+  return a ? identAdresy(a) : null;
+}
 
 /**
  * Plátce z GET /customers/{dsw}/addresses. Bez registrované adresy vrací DPD
@@ -121,12 +188,8 @@ export type AdresaPlatce = { it4emId: string | number } | { id: string | number 
  * fyzická adresa (schéma Payer Specs to dovoluje).
  */
 export function vyberAdresuPlatce(seznam: unknown, preferovanePsc: string | undefined, zaloha: AdresaDpd): AdresaPlatce {
-  const arr = ((Array.isArray(seznam) ? seznam : (seznam as any)?.items ?? []) as any[]).filter((a) => a?.isActive !== false);
-  const psc = (preferovanePsc ?? "").replace(/\s/g, "");
-  const pick = (psc && arr.find((a) => JSON.stringify(a).replace(/\s/g, "").includes(psc))) || arr[0];
-  if (pick?.it4emId != null) return { it4emId: pick.it4emId };
-  if (pick?.id != null) return { id: pick.id };
-  return zaloha;
+  const arr = aktivniAdresy(seznam);
+  return registrovanaAdresa(arr, preferovanePsc) ?? identAdresy(arr[0]) ?? zaloha;
 }
 
 /**

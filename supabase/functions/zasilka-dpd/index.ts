@@ -25,11 +25,16 @@ import {
   dnySvozu,
   DPD_URL,
   idSvozu,
+  jdeTisknoutStitek,
+  predaniText,
+  registrovanaAdresa,
   stavZTrackingu,
+  variantyZasilky,
   teloZasilky,
   vyberAdresuPlatce,
   type AdresaDpd,
   type RezimDpd,
+  type VariantaDpd,
 } from "../_shared/dpd.ts";
 
 const corsHeaders = {
@@ -48,7 +53,7 @@ class Chyba extends Error {
   }
 }
 
-const SLOUPCE = "id, service_id, shipment_id, mode, parcels, testovaci, dpd_shipment_id, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, cancelled_at";
+const SLOUPCE = "id, service_id, shipment_id, mode, varianta, parcels, testovaci, dpd_shipment_id, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, cancelled_at";
 
 function dpdFetch(dpd: Dpd, path: string, opts: { method?: string; body?: unknown } = {}): Promise<Response> {
   return fetch(`${dpd.base}${path}`, {
@@ -129,22 +134,32 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   const hlavni = (pobocky ?? []).find((b: any) => b.is_default) ?? z1;
   const zalohaPlatce = adresaPobocky(hlavni, nazev) ?? (odesilatel as AdresaDpd);
   const adresy = await dpdFetch(dpd, `/customers/${encodeURIComponent(dpd.dsw)}/addresses`);
-  const adresaPlatce = vyberAdresuPlatce(adresy.ok ? await adresy.json().catch(() => []) : [], hlavni.address_zip ?? undefined, zalohaPlatce);
+  const seznamAdres = adresy.ok ? await adresy.json().catch(() => []) : [];
+  const adresaPlatce = vyberAdresuPlatce(seznamAdres, hlavni.address_zip ?? undefined, zalohaPlatce);
+  // Pobočka odeslání jako registrovaná adresa účtu → běžná zásilka Standard.
+  const registrovana = registrovanaAdresa(seznamAdres, z1.address_zip);
 
   const reference = `Z-${String(z.cislo).padStart(4, "0")}`;
   const poznamka = typeof body.note === "string" ? body.note : (z.note ?? "");
-  const sRes = await dpdFetch(dpd, "/shipments", {
-    method: "POST",
-    body: teloZasilky({ dsw: dpd.dsw, rezim, balicku, reference, poznamka, odesilatel: odesilatel!, prijemce: prijemce!, adresaPlatce }),
-  });
-  if (!sRes.ok) throw new Chyba(`DPD zásilku nepřijalo – ${await textChybyDpd(sRes)}`, 502);
-  const { shipmentId: dpdShipmentId, parcelNumbers } = cislaBaliku(await sRes.json().catch(() => null));
+  let varianta: VariantaDpd | null = null;
+  let sData: unknown = null;
+  const chybyZasilky: string[] = [];
+  for (const v of variantyZasilky(rezim, !!registrovana)) {
+    const sRes = await dpdFetch(dpd, "/shipments", {
+      method: "POST",
+      body: teloZasilky({ dsw: dpd.dsw, varianta: v, balicku, reference, poznamka, odesilatel: odesilatel!, prijemce: prijemce!, registrovana, adresaPlatce }),
+    });
+    if (sRes.ok) { sData = await sRes.json().catch(() => null); varianta = v; break; }
+    chybyZasilky.push(`${v}: ${await textChybyDpd(sRes)}`);
+  }
+  if (!varianta) throw new Chyba(`DPD zásilku nepřijalo – ${chybyZasilky.join(" | ")}`.slice(0, 900), 502);
+  const { shipmentId: dpdShipmentId, parcelNumbers } = cislaBaliku(sData);
   if (parcelNumbers.length === 0) throw new Chyba("DPD nevrátilo číslo balíku – zkontrolujte MojeDPD, než to zkusíte znovu.", 502);
 
-  // Štítek jen u podání na výdejně. U svozu (Collection) ho přiveze kurýr –
-  // DPD tisk odmítá (ShipmentLabelsDisallowed, ověřeno 23. 10. 2026).
+  // U svozu z cizí adresy (Collection) štítek přiveze kurýr – DPD tisk
+  // odmítá (ShipmentLabelsDisallowed, ověřeno 23. 10. 2026).
   let label: string | null = null;
-  if (rezim === "label") {
+  if (jdeTisknoutStitek(varianta)) {
     const lRes = await dpdFetch(dpd, "/parcels/labels", {
       method: "POST",
       body: { printType: "PDF", printProperties: { pageSize: "A6", labelsPerPage: 1 }, parcels: parcelNumbers.map((parcelNumber) => ({ parcelNumber })) },
@@ -158,7 +173,10 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
     const dny = den === "asap" ? dnySvozu() : [den!];
     const chyby: string[] = [];
     for (const d of dny) {
-      const res = await dpdFetch(dpd, "/pickup-orders", { method: "POST", body: [{ parcel: { parcelNumber: parcelNumbers[0] }, date: d, ...(poznamka ? { note: poznamka.slice(0, 35) } : {}) }] });
+      // Standard: svoz na registrovanou adresu (kurýr vezme všechny balíky se štítkem);
+      // Collection: svoz konkrétního balíku z adresy pobočky.
+      const kde = varianta === "standard" && registrovana ? { customerAddress: registrovana } : { parcel: { parcelNumber: parcelNumbers[0] } };
+      const res = await dpdFetch(dpd, "/pickup-orders", { method: "POST", body: [{ ...kde, date: d, ...(poznamka ? { note: poznamka.slice(0, 35) } : {}) }] });
       if (!res.ok) { chyby.push(`${d}: ${await textChybyDpd(res)}`); continue; }
       const id = idSvozu(await res.json().catch(() => null), res.headers.get("Location"));
       if (!id) { chybaSvozu = `Svoz na ${d} odeslán, ale DPD nevrátilo jeho číslo – ověřte v MojeDPD.`; den = d; break; }
@@ -181,21 +199,22 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
     pickup_order_id: pickupOrderId,
     pickup_date: rezim === "courier" && pickupOrderId ? den : null,
     status: pickupOrderId ? "pickup_ordered" : "created",
-    status_text: chybaSvozu,
+    varianta,
+    status_text: chybaSvozu ?? predaniText(varianta, rezim),
     label_pdf: label,
     created_by: uid,
   };
   const { data: ulozeno, error } = await svc.from("ticket_shipment_dpd").insert(radek).select(SLOUPCE).single();
   if (error) throw new Chyba(`Zásilka u DPD vznikla (balík ${parcelNumbers.join(", ")}), ale nepodařilo se ji uložit: ${error.message}`, 500);
   await svc.from("ticket_shipments").update({ carrier: "DPD", tracking_number: parcelNumbers.join(", ") }).eq("id", z.id);
-  return json({ ok: true, objednavka: ulozeno, labelBase64: label, varovani: chybaSvozu ?? (label || rezim === "courier" ? null : "Štítek se nepodařilo stáhnout – zkuste Tisk štítku.") });
+  return json({ ok: true, objednavka: ulozeno, labelBase64: label, varovani: chybaSvozu ?? (label || !jdeTisknoutStitek(varianta) ? null : "Štítek se nepodařilo stáhnout – zkuste Tisk štítku.") });
 }
 
 // ── label ───────────────────────────────────────────────────────────────────
 async function stitek(svc: Svc, shipmentId: string) {
-  const { data } = await svc.from("ticket_shipment_dpd").select("id, service_id, mode, parcel_numbers, label_pdf").eq("shipment_id", shipmentId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data } = await svc.from("ticket_shipment_dpd").select("id, service_id, mode, varianta, parcel_numbers, label_pdf").eq("shipment_id", shipmentId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!data) throw new Chyba("K zásilce není objednaná přeprava.", 404);
-  if (data.mode === "courier") throw new Chyba("U svozu kurýrem se štítek netiskne – přiveze ho kurýr.");
+  if (!jdeTisknoutStitek(data.varianta ?? (data.mode === "courier" ? "collection" : "return"))) throw new Chyba("U svozu z adresy pobočky se štítek netiskne – přiveze ho kurýr.");
   if (data.label_pdf) return json({ ok: true, labelBase64: data.label_pdf });
   const dpd = await ucetDpd(svc, data.service_id);
   const res = await dpdFetch(dpd, "/parcels/labels", {

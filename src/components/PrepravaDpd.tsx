@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, Input, Pill, Segmented } from "./ui";
 import { showToast } from "./Toast";
 import { reportError } from "../lib/reportError";
-import { jdeZrusit, objednatDpd, otevritStitek, sledovatDpd, stavDpdText, stitekDpd, zrusitDpd, type ObjednavkaDpd, type RezimDpd } from "../lib/prepravaDpd";
+import { jdeZrusit, maStitek, objednatDpd, otevritStitek, sledovatDpd, stavDpdText, stitekDpd, zrusitDpd, type ObjednavkaDpd, type RezimDpd } from "../lib/prepravaDpd";
 
 /**
  * Přeprava DPD v detailu zásilky (Zásilky). Bez objednávky formulář
@@ -67,7 +67,8 @@ export function PrepravaDpd({
     const r = await objednatDpd({ shipmentId, mode: rezim, parcels: Number(baliku) || 1, pickupDate: rezim === "courier" ? den : undefined });
     if (r.labelBase64) otevritStitek(r.labelBase64, `DPD-${cislo}.pdf`);
     if (r.varovani) showToast(r.varovani, "error");
-    else showToast(rezim === "courier" ? "Přeprava objednána, kurýr přijede pro balík." : "Štítek je připravený – nalepte ho a podejte na výdejním místě DPD.", "success");
+    // Pokyn k předání podle varianty (výdejna / kurýr) posílá funkce.
+    else showToast(r.objednavka.statusText ?? (rezim === "courier" ? "Přeprava objednána, kurýr přijede pro balík." : "Štítek je připravený."), "success");
   });
 
   const titulek = (
@@ -87,7 +88,10 @@ export function PrepravaDpd({
           <span style={{ color: "var(--muted)" }}>· {ziva.parcels} {ziva.parcels === 1 ? "balík" : ziva.parcels < 5 ? "balíky" : "balíků"}</span>
         </div>
         {ziva.statusText && ziva.status !== "delivered" && (
-          <div style={{ fontSize: 12, color: ziva.status === "created" || ziva.status === "pickup_ordered" ? "var(--muted)" : "var(--text)" }}>DPD: {ziva.statusText}</div>
+          // Před prvním pohybem je tu pokyn k předání (z funkce), potom poslední událost DPD.
+          <div style={{ fontSize: 12, color: ziva.status === "created" || ziva.status === "pickup_ordered" ? "var(--muted)" : "var(--text)" }}>
+            {ziva.status === "created" || ziva.status === "pickup_ordered" ? ziva.statusText : `DPD: ${ziva.statusText}`}
+          </div>
         )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 12 }}>
           {ziva.parcelNumbers.map((n) => (
@@ -95,8 +99,8 @@ export function PrepravaDpd({
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {/* U svozu štítek přiveze kurýr, DPD jeho tisk odmítá. */}
-          {ziva.mode === "label" && (
+          {/* U svozu z adresy pobočky (Collection) štítek přiveze kurýr, DPD jeho tisk odmítá. */}
+          {maStitek(ziva) && (
             <Button size="sm" variant="soft" disabled={!!pracuje} onClick={() => void akce("label", async () => otevritStitek(await stitekDpd(shipmentId), `DPD-${cislo}.pdf`))}>
               {pracuje === "label" ? "Stahuji…" : "Tisk štítku"}
             </Button>
@@ -148,8 +152,8 @@ export function PrepravaDpd({
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         {rezim === "label"
-          ? "Vytiskne se štítek, krabici podáte na kterémkoli výdejním místě DPD."
-          : "DPD pošle kurýra na adresu pobočky odeslání, štítek přiveze s sebou. „Co nejdřív“ zkusí dnešek a další pracovní dny."}
+          ? "Vytiskne se štítek. Kam s krabicí (výdejna, nebo i kurýr), napíše Jobi po objednání – záleží na pobočce odeslání."
+          : "DPD pošle kurýra na adresu pobočky odeslání. „Co nejdřív“ zkusí dnešek a další pracovní dny."}
         {" "}Číslo balíku se zapíše do zásilky, stav se pak aktualizuje sám.
       </div>
     </div>
