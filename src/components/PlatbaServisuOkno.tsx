@@ -81,9 +81,6 @@ export function PlatbaServisuOkno({ serviceId, skryt }: { serviceId: string | nu
           {platba.vs && radek("VS", platba.vs, platba.vs)}
         </div>
       </div>
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>
-        {qr ? "Naskenujte QR kód v aplikaci banky. " : ""}Okno zmizí, až provozovatel Jobi platbu potvrdí – do té doby se připomene jednou denně.
-      </div>
     </div>
   );
 }
