@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ibanZCislaUctu } from "../../lib/banka";
 import { supabase } from "../../lib/supabaseClient";
 import { Card } from "../../lib/settingsUi";
 import { showToast } from "../../components/Toast";
@@ -30,6 +31,26 @@ export function PlatbyServisuPanel() {
   const [seznam, setSeznam] = useState<PlatbaServisu[] | null>(null);
   const [chyba, setChyba] = useState<string | null>(null);
   const [rozepsane, setRozepsane] = useState<Record<string, { cena: string; den: string }>>({});
+  /* Kam servisy platí – do QR platby v okně, které vidí vlastník a admini servisu. */
+  const [ucet, setUcet] = useState<string | null>(null);
+  const [ucetPole, setUcetPole] = useState("");
+  useEffect(() => {
+    if (!supabase) return;
+    void (supabase.from("platby_prijem") as any).select("ucet").maybeSingle().then(({ data }: { data: { ucet?: string } | null }) => {
+      setUcet(data?.ucet ?? "");
+      setUcetPole(data?.ucet ?? "");
+    });
+  }, []);
+  const ulozUcet = async () => {
+    if (!supabase) return;
+    const hodnota = ucetPole.trim().replace(/\s+/g, "");
+    if (!ibanZCislaUctu(hodnota)) { setChyba("Číslo účtu nejde převést na IBAN – zadejte ho jako 123456789/0100 nebo IBAN."); return; }
+    const { error } = await (supabase.from("platby_prijem") as any).upsert({ id: true, ucet: hodnota, updated_at: new Date().toISOString() });
+    if (error) { setChyba(error.message); return; }
+    setChyba(null);
+    setUcet(hodnota);
+    setUcetPole(hodnota);
+  };
 
   const nacti = useCallback(async () => {
     if (!supabase) return;
@@ -117,6 +138,15 @@ export function PlatbyServisuPanel() {
         </div>
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12, fontSize: 13 }}>
+        <span style={{ color: "var(--muted)" }}>Účet pro platby (QR v okně servisu):</span>
+        <input value={ucetPole} onChange={(e) => setUcetPole(e.target.value)} placeholder="123456789/0100" aria-label="Účet pro platby servisů" style={{ padding: "6px 10px", borderRadius: 8, border, background: "var(--bg)", color: "var(--text)", fontSize: 13, minWidth: 200 }} />
+        {ucet !== null && ucetPole.trim() !== (ucet ?? "") && (
+          <button type="button" style={tlacitko} onClick={() => void ulozUcet()}>Uložit účet</button>
+        )}
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>VS = rok, měsíc a pořadí servisu (např. 20261001).</span>
+      </div>
+
       {chyba && <div style={{ padding: 12, borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", fontSize: 13, marginBottom: 12 }}>{chyba}</div>}
 
       {seznam && (
@@ -142,7 +172,7 @@ export function PlatbyServisuPanel() {
           <div style={{ overflowX: "auto", border, borderRadius: 12 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr>{["Servis", "Platí", "Kč / měsíc", "Den platby", "Stav", "Zaplaceno", "Poslední platba", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                <tr>{["Servis", "Platí", "Kč / měsíc", "Den platby", "VS", "Stav", "Zaplaceno", "Poslední platba", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {seznam.map((p) => {
@@ -160,6 +190,7 @@ export function PlatbyServisuPanel() {
                         <input inputMode="numeric" value={r.den} onChange={(e) => nastav({ den: e.target.value })} onBlur={() => { const n = parseInt(r.den, 10); if (Number.isInteger(n) && n >= 1 && n <= 28 && n !== p.denPlatby) void ulozNastaveni(p, { den_platby: n }); }} style={{ ...pole, width: 56 }} aria-label="Den platby v měsíci" />
                         <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 4 }}>. den</span>
                       </td>
+                      <td style={{ ...td, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.vs ?? "—"}</td>
                       <td style={{ ...td, color: BARVA[stav], fontWeight: stav === "splatne" || stav === "po_splatnosti" ? 700 : 500 }}>{POPIS_STAVU[stav]}</td>
                       <td style={td}>
                         {(p.aktivni && p.aktivniServis) || p.zaplacenoAt ? (
@@ -176,7 +207,7 @@ export function PlatbyServisuPanel() {
                     </tr>
                   );
                 })}
-                {seznam.length === 0 && <tr><td colSpan={8} style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Žádné servisy.</td></tr>}
+                {seznam.length === 0 && <tr><td colSpan={9} style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Žádné servisy.</td></tr>}
               </tbody>
             </table>
           </div>

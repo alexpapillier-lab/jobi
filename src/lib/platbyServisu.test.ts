@@ -3,7 +3,7 @@ import { dniPoSplatnosti, kPripomenuti, mesicniPrijem, prevedPlatbu, stavPlatby,
 
 const platba = (o: Partial<PlatbaServisu>): PlatbaServisu => ({
   serviceId: "s", nazev: "Servis", aktivniServis: true, cenaMesicne: 990, denPlatby: 15, aktivni: true, poznamka: null,
-  maNastaveni: true, obdobi: "2026-09", zaplacenoAt: null, zaplacenoCastka: null, posledniObdobi: null, ...o,
+  maNastaveni: true, obdobi: "2026-09", zaplacenoAt: null, zaplacenoCastka: null, posledniObdobi: null, vs: null, ...o,
 });
 
 describe("stav platby", () => {

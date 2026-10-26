@@ -34,6 +34,7 @@ import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
 import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
 import { PrepinacUctu } from "./components/PrepinacUctu";
+import { PlatbaServisuOkno } from "./components/PlatbaServisuOkno";
 import { ChatPlovouci } from "./components/chat/ChatPlovouci";
 import { useChatZapnuty } from "./hooks/useChatZapnuty";
 import { CiziServis } from "./components/CiziServis";
@@ -1389,6 +1390,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             „Uložit koncept“) a tlačítka pak nejdou kliknout. Plovoucí „+“ je
             tam ze stejného důvodu schované už dřív; chat běží dál, jen
             kolečko na téhle stránce není. */}
+        {/* Servis, který platí majiteli aplikace: od dne platby okno s QR platbou (vlastník a admini). */}
+        <PlatbaServisuOkno serviceId={activeServiceId} skryt={jeRootOwner} />
         <ChatPlovouci serviceId={activeServiceId} userId={session.user.id} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} zapnuto={chatZapnuty} bublinaSkryta={activePage === "invoices"} />
         <CiziServis serviceId={activeServiceId} onPristupZiskan={() => { void refreshServices(); }} />
         <StatusesProvider activeServiceId={activeServiceId}>

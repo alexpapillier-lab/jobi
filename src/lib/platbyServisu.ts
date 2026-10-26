@@ -22,6 +22,8 @@ export type PlatbaServisu = {
   zaplacenoAt: string | null;
   zaplacenoCastka: number | null;
   posledniObdobi: string | null;
+  /** Variabilní symbol za `obdobi` (RRRRMM + pořadí servisu); null = servis nemá nastavení. */
+  vs: string | null;
 };
 
 export type StavPlatby = "neaktivni" | "zaplaceno" | "ceka" | "splatne" | "po_splatnosti";
@@ -93,5 +95,52 @@ export function prevedPlatbu(raw: unknown): PlatbaServisu {
     zaplacenoAt: typeof o.zaplacenoAt === "string" ? o.zaplacenoAt : null,
     zaplacenoCastka: o.zaplacenoCastka === null || o.zaplacenoCastka === undefined ? null : cislo(o.zaplacenoCastka),
     posledniObdobi: typeof o.posledniObdobi === "string" ? o.posledniObdobi : null,
+    vs: typeof o.vs === "string" && o.vs ? o.vs : null,
   };
+}
+
+/** Co má servis zaplatit (RPC platba_meho_servisu) – pro okno s QR platbou. */
+export type PlatbaMehoServisu = {
+  nazev: string;
+  castka: number;
+  /** „2026-10“ */
+  obdobi: string;
+  /** ISO datum dne platby. */
+  splatnost: string;
+  dniPoSplatnosti: number;
+  /** Číslo účtu nebo IBAN příjemce; null = majitel ho nevyplnil. */
+  ucet: string | null;
+  vs: string | null;
+};
+
+export function prevedPlatbuMehoServisu(r: unknown): PlatbaMehoServisu | null {
+  if (!r || typeof r !== "object") return null;
+  const o = r as Record<string, unknown>;
+  const castka = Number(o.castka);
+  if (!Number.isFinite(castka) || castka <= 0) return null;
+  return {
+    nazev: String(o.nazev ?? ""),
+    castka,
+    obdobi: String(o.obdobi ?? ""),
+    splatnost: String(o.splatnost ?? ""),
+    dniPoSplatnosti: Number(o.dniPoSplatnosti) || 0,
+    ucet: typeof o.ucet === "string" && o.ucet.trim() ? o.ucet.trim() : null,
+    vs: typeof o.vs === "string" && o.vs ? o.vs : null,
+  };
+}
+
+/** „říjen 2026“ z „2026-10“. */
+export function nazevObdobi(obdobi: string): string {
+  const [r, m] = obdobi.split("-").map(Number);
+  if (!r || !m) return obdobi;
+  return new Date(r, m - 1, 1).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" });
+}
+
+/**
+ * QR platba (SPAYD) pro měsíční platbu servisu. Bez diakritiky ve zprávě –
+ * některé bankovní aplikace ji ze SPAYD zkomolí.
+ */
+export function spaydPlatbyServisu(p: Pick<PlatbaMehoServisu, "castka" | "vs" | "obdobi" | "nazev">, iban: string): string {
+  const zprava = `Jobi ${p.obdobi} ${p.nazev}`.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[*]/g, " ").slice(0, 60);
+  return ["SPD*1.0", `ACC:${iban}`, `AM:${p.castka.toFixed(2)}`, "CC:CZK", p.vs ? `X-VS:${p.vs}` : "", `MSG:${zprava}`].filter(Boolean).join("*");
 }
