@@ -191,7 +191,15 @@ export function PlatbyServisuPanel() {
                         <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 4 }}>. den</span>
                       </td>
                       <td style={{ ...td, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.vs ?? "—"}</td>
-                      <td style={{ ...td, color: BARVA[stav], fontWeight: stav === "splatne" || stav === "po_splatnosti" ? 700 : 500 }}>{POPIS_STAVU[stav]}</td>
+                      <td style={{ ...td, color: BARVA[stav], fontWeight: stav === "splatne" || stav === "po_splatnosti" ? 700 : 500 }}>
+                        {POPIS_STAVU[stav]}
+                        {/* Servis sám nahlásil zaplaceno – ověřit v bance a zapsat. */}
+                        {p.nahlasenoAt && !p.zaplacenoAt && (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d" }} title="Servis klikl na Zaplaceno v okně s QR platbou – ověřte v bance a zapište">
+                            hlásí zaplaceno {new Date(p.nahlasenoAt).toLocaleDateString("cs-CZ")}
+                          </div>
+                        )}
+                      </td>
                       <td style={td}>
                         {(p.aktivni && p.aktivniServis) || p.zaplacenoAt ? (
                           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>

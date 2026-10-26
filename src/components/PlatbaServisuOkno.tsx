@@ -4,6 +4,8 @@ import { ibanZCislaUctu } from "../lib/banka";
 import { nazevObdobi, prevedPlatbuMehoServisu, spaydPlatbyServisu, type PlatbaMehoServisu } from "../lib/platbyServisu";
 import { qrDataUrl } from "../../jobidocs/src/qr";
 import { CopyButton } from "./CopyButton";
+import { Button } from "./ui";
+import { showToast } from "./Toast";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 
 /**
@@ -17,6 +19,7 @@ const klicZavreni = (serviceId: string, obdobi: string) => `jobi:platba-servisu-
 
 export function PlatbaServisuOkno({ serviceId, skryt }: { serviceId: string | null; skryt: boolean }) {
   const [platba, setPlatba] = useState<PlatbaMehoServisu | null>(null);
+  const [posilam, setPosilam] = useState(false);
   /* Na telefonu je dole navigační lišta – okno nad ní. */
   const uzke = useIsNarrow();
 
@@ -39,6 +42,15 @@ export function PlatbaServisuOkno({ serviceId, skryt }: { serviceId: string | nu
   const iban = ibanZCislaUctu(platba.ucet);
   const qr = iban ? qrDataUrl(spaydPlatbyServisu(platba, iban), 180) : "";
   const castka = `${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 2 }).format(platba.castka)} Kč`;
+  const nahlasit = async () => {
+    if (!supabase) return;
+    setPosilam(true);
+    const { error } = await (supabase as any).rpc("platba_nahlasit_zaplaceno", { p_service_id: serviceId });
+    setPosilam(false);
+    if (error) { showToast(`Nepodařilo se uložit: ${error.message}`, "error"); return; }
+    showToast("Díky, platba je nahlášená.", "success");
+    setPlatba(null);
+  };
   const zavrit = () => {
     try { localStorage.setItem(klicZavreni(serviceId, platba.obdobi), "1"); } catch { /* ignorovat */ }
     setPlatba(null);
@@ -80,6 +92,9 @@ export function PlatbaServisuOkno({ serviceId, skryt }: { serviceId: string | nu
           {platba.ucet && radek("Účet", platba.ucet, platba.ucet)}
           {platba.vs && radek("VS", platba.vs, platba.vs)}
         </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Button size="sm" variant="primary" disabled={posilam} onClick={() => void nahlasit()}>{posilam ? "Ukládám…" : "Zaplaceno"}</Button>
       </div>
     </div>
   );

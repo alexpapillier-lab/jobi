@@ -24,6 +24,8 @@ export type PlatbaServisu = {
   posledniObdobi: string | null;
   /** Variabilní symbol za `obdobi` (RRRRMM + pořadí servisu); null = servis nemá nastavení. */
   vs: string | null;
+  /** Kdy servis sám nahlásil „Zaplaceno“ (tlačítko v okně s QR) – k ověření v bance. */
+  nahlasenoAt: string | null;
 };
 
 export type StavPlatby = "neaktivni" | "zaplaceno" | "ceka" | "splatne" | "po_splatnosti";
@@ -96,6 +98,7 @@ export function prevedPlatbu(raw: unknown): PlatbaServisu {
     zaplacenoCastka: o.zaplacenoCastka === null || o.zaplacenoCastka === undefined ? null : cislo(o.zaplacenoCastka),
     posledniObdobi: typeof o.posledniObdobi === "string" ? o.posledniObdobi : null,
     vs: typeof o.vs === "string" && o.vs ? o.vs : null,
+    nahlasenoAt: typeof o.nahlasenoAt === "string" ? o.nahlasenoAt : null,
   };
 }
 
