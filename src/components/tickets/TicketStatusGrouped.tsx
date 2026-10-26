@@ -1,4 +1,6 @@
 import React, { useMemo } from "react";
+import { useIsNarrow } from "../../hooks/useIsNarrow";
+import { RadekMobil } from "./RadekMobil";
 import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketStitky } from "./fields";
@@ -45,6 +47,42 @@ function GroupedCard({
   smsUnread?: number;
 }) {
   const finalPrice = computeFinalPrice(t);
+  const uzke = useIsNarrow();
+  if (uzke) {
+    return (
+      <RadekMobil
+        onClick={() => onClickDetail(t.id)}
+        styl={{ ...promenneRadku(stav), border: `1px solid ${stav.ramecek}`, background: stav.pozadi, color: stav.barvaPisma }}
+        kod={<TicketCode code={t.code} dense>{smsBadge(smsUnread)}</TicketCode>}
+        datum={<TicketDate value={t.createdAt} />}
+        cena={finalPrice > 0 ? (
+          <span style={{ fontSize: 13, fontWeight: 800, color: stav.plnaVyplne ? "var(--text)" : statusColor, whiteSpace: "nowrap" }}>{korunami(finalPrice)}</span>
+        ) : null}
+        zarizeni={<span style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>}
+        info={
+          <>
+            {/* Jméno má přednost před popisem opravy – ten se ořízne první. */}
+            <span style={{ display: "inline-flex", flexShrink: 0, maxWidth: "55%", minWidth: 0, overflow: "hidden" }}>
+              <TicketCustomer name={t.customerName} />
+            </span>
+            <TicketStitky t={t} />
+            {(t.requestedRepair || t.issueShort) && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
+                <WrenchIcon size={10} color="var(--muted)" />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.requestedRepair || t.issueShort}</span>
+              </span>
+            )}
+          </>
+        }
+        ovladani={
+          <>
+            <div style={{ ...promenneOvladani(stav), minWidth: 0 }}>{statusPicker}</div>
+            <div style={promenneOvladani(stav)}>{printButton}</div>
+          </>
+        }
+      />
+    );
+  }
   return (
     <div
       onClick={() => onClickDetail(t.id)}
