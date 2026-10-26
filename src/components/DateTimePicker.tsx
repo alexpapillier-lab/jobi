@@ -181,6 +181,8 @@ export function DateTimePicker({
   };
 
   const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+  const ted = new Date();
+  const dnesStr = `${ted.getFullYear()}-${String(ted.getMonth() + 1).padStart(2, "0")}-${String(ted.getDate()).padStart(2, "0")}`;
   const firstDay = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay();
   const startOffset = firstDay === 0 ? 6 : firstDay - 1;
   const days: (number | null)[] = [...Array(startOffset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
@@ -248,26 +250,30 @@ export function DateTimePicker({
                 {WEEKDAYS.map((w) => (
                   <div key={w} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--muted)", padding: "4px 0" }}>{w}</div>
                 ))}
-                {days.map((day, i) =>
-                  day === null ? (
-                    <div key={`e-${i}`} />
-                  ) : (
+                {days.map((day, i) => {
+                  if (day === null) return <div key={`e-${i}`} />;
+                  const den = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                  const vybrany = dateStr === den;
+                  // Dnešek orámovaný, ať je vidět, od kdy termín počítat (vybraný den má přednost).
+                  const dnesni = den === dnesStr;
+                  return (
                     <button
                       key={day}
                       type="button"
                       onClick={() => pickDay(day)}
-                      data-selected={dateStr === `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` ? "" : undefined}
+                      data-selected={vybrany ? "" : undefined}
+                      aria-current={dnesni ? "date" : undefined}
+                      title={dnesni ? "Dnes" : undefined}
                       style={{
                         ...calDayBtn,
-                        ...(dateStr === `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-                          ? { background: "var(--accent)", color: "white", fontWeight: 700 }
-                          : {}),
+                        ...(dnesni && !vybrany ? { boxShadow: "inset 0 0 0 2px var(--accent)", color: "var(--accent)", fontWeight: 800 } : {}),
+                        ...(vybrany ? { background: "var(--accent)", color: "white", fontWeight: 700 } : {}),
                       }}
                     >
                       {day}
                     </button>
-                  )
-                )}
+                  );
+                })}
               </div>
             </div>,
             document.body
