@@ -87,10 +87,44 @@ function json(telo, status) {
   });
 }
 
+/**
+ * Adresář zákazníků pro telefon (CardDAV). Brána Supabase metody PROPFIND
+ * a REPORT nepustí, proto se požadavek přepošle edge funkci `kontakty` jako
+ * POST a metoda, cesta, Depth a přihlášení jdou v hlavičkách X-Dav-*.
+ * Odpověď (207 Multi-Status, vizitky) se vrací beze změny a nikdy necachuje.
+ */
+async function kartyDav(request, url) {
+  const hlavicky = new Headers({
+    "X-Dav-Method": request.method,
+    "X-Dav-Path": url.pathname,
+    "X-Dav-Depth": request.headers.get("Depth") ?? "0",
+    "Content-Type": request.headers.get("Content-Type") || "application/xml",
+  });
+  const prihlaseni = request.headers.get("Authorization");
+  if (prihlaseni) hlavicky.set("X-Dav-Authorization", prihlaseni);
+  const telo = ["PROPFIND", "REPORT"].includes(request.method) ? await request.text() : undefined;
+  const odpoved = await fetch(`${PUVOD}/functions/v1/kontakty`, { method: "POST", headers: hlavicky, body: telo });
+  const ven = new Headers();
+  for (const k of ["Content-Type", "DAV", "Allow", "ETag", "WWW-Authenticate"]) {
+    const v = odpoved.headers.get(k);
+    if (v) ven.set(k, v);
+  }
+  ven.set("Cache-Control", "no-store");
+  return new Response(request.method === "HEAD" ? null : odpoved.body, { status: odpoved.status, headers: ven });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const cesta = url.pathname.replace(/\/+$/, "") || "/";
+
+    // CardDAV: iPhone hledá /.well-known/carddav, pak mluví s /carddav/…
+    if (cesta === "/.well-known/carddav") {
+      return new Response(null, { status: 301, headers: { Location: "/carddav/" } });
+    }
+    if (cesta === "/carddav" || cesta.startsWith("/carddav/")) {
+      return kartyDav(request, url);
+    }
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
@@ -222,7 +256,7 @@ export default {
     hlavicky.delete("Content-Length");
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : obnovit ? "REFRESH" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "9");
+    hlavicky.set("X-Jobi-Verze", "10");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {

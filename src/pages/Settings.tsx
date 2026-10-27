@@ -37,6 +37,7 @@ import { SlevySettingsSection } from "./Settings/SlevySettingsSection";
 import { DetailZakazkySettingsSection } from "./Settings/DetailZakazkySettingsSection";
 import { ZasilkySettingsSection } from "./Settings/ZasilkySettingsSection";
 import { SdilenyPocitacSection } from "./Settings/SdilenyPocitacSection";
+import { KontaktyTelefonSection } from "./Settings/KontaktyTelefonSection";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
@@ -1593,6 +1594,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <>
           <ProfileSettingsSection />
           <SdilenyPocitacSection />
+          <KontaktyTelefonSection serviceId={activeServiceId} serviceName={services.find((x) => x.service_id === activeServiceId)?.service_name ?? "servisu"} />
           <div>
             <Card>
               <CardHeader title="Přidat servis pomocí pozvánky" description="Máte kód z e-mailu s pozvánkou do dalšího servisu? Zadejte ho a přidáte se bez odhlášení." />

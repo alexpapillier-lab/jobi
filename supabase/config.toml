@@ -504,3 +504,7 @@ verify_jwt = false
 [functions.zasilka-dpd]
 # Volá ji i pg_cron (preprava_dpd_tick) s tajemstvím z Vaultu, bez JWT; uživatele ověřuje funkce sama.
 verify_jwt = false
+
+[functions.kontakty]
+# Telefony (CardDAV přes Worker api.appjobi.com) se přihlašují jménem a heslem z Jobi, ne JWT.
+verify_jwt = false

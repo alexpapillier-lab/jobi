@@ -236,7 +236,7 @@ export default function App() {
       const dluzi = kPripomenuti(data.map(prevedPlatbu), new Date());
       if (dluzi.length === 0) return;
       try { localStorage.setItem(klic, "1"); } catch { /* ignorovat */ }
-      const text = dluzi.map((d) => `${d.nazev} ${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 0 }).format(d.cenaMesicne)} Kč${d.nahlasenoAt ? " (hlásí zaplaceno – ověřte v bance)" : d.dni > 0 ? ` (${d.dni} dní po splatnosti)` : ""}`).join(", ");
+      const text = dluzi.map((d) => `${d.nazev} ${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 0 }).format(d.cenaMesicne)} Kč${d.nahlasenoAt ? " (hlásí zaplaceno – ověřte v bance)" : d.dni > 0 ? ` (${d.dni} ${d.dni === 1 ? "den" : d.dni < 5 ? "dny" : "dní"} po splatnosti)` : ""}`).join(", ");
       showPersistentToast(`Platby servisů: ${text}`, "info", {
         actionLabel: "Otevřít Owner",
         onAction: () => {
