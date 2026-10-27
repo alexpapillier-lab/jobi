@@ -548,7 +548,15 @@ export default function Customers({
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zákazníci</div>
+        <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", marginRight: "auto" }}>Zákazníci</div>
+        <Button
+          variant="soft"
+          size="sm"
+          title="Zákazníci v Kontaktech telefonu – aktualizují se sami"
+          onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings", subsection: "communication_kontakty" } }))}
+        >
+          Do telefonu
+        </Button>
         {smiImportovat && (
           <Button data-tour="customers-import" variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
             Import z CSV

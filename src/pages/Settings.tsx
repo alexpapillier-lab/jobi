@@ -73,7 +73,7 @@ import { useAuth } from "../auth/AuthProvider";
 export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_migrace" | "service_gdpr" | "service_sms" | "service_team" | "service_odmeny" | "service_owner" | "service_api"
-  | "communication_automations" | "communication_chat" | "communication_report"
+  | "communication_automations" | "communication_chat" | "communication_report" | "communication_kontakty"
   | "documents_sablony"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail" | "orders_zasilky"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
@@ -92,7 +92,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_slevy: "orders", orders_detail: "orders", orders_zasilky: "orders",
   orders_tisk_dokumentu: "documents", documents_sablony: "documents",
-  service_sms: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
+  service_sms: "communication", communication_kontakty: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
   service_team: "people", service_odmeny: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
   profile_me: "profile",
@@ -1071,6 +1071,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
+        // Pro každého člena – přístup pro vlastní telefon.
+        { key: "communication_kontakty" as const, label: "Kontakty v telefonu", keywords: ["kontakty", "telefon", "iphone", "android", "carddav", "adresář", "zákazníci", "synchronizace", "mobil"] },
         ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS", keywords: ["sms", "telefonní číslo", "zprávy", "přesměrování", "hovory", "šablona zprávy"] }] : []),
         ...(isAdmin ? [{ key: "communication_automations" as const, label: "Automatizace", keywords: ["automatizace", "pravidla", "připomínka", "sms", "e-mail", "skladné", "recenze", "vyzvednutí"] }] : []),
         ...(isAdmin ? [{ key: "communication_chat" as const, label: "Chat týmu", keywords: ["chat", "zprávy", "tým", "pobočka", "soukromá zpráva", "upozornění", "zvuk"] }] : []),
@@ -1379,6 +1381,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* KOMUNIKACE - SMS */}
+      {section.subsection === "communication_kontakty" && (
+        <KontaktyTelefonSection serviceId={activeServiceId} serviceName={services.find((x) => x.service_id === activeServiceId)?.service_name ?? "servisu"} />
+      )}
+
       {section.subsection === "service_sms" && activeServiceId && (
         <>
           <Card>
@@ -1594,7 +1600,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <>
           <ProfileSettingsSection />
           <SdilenyPocitacSection />
-          <KontaktyTelefonSection serviceId={activeServiceId} serviceName={services.find((x) => x.service_id === activeServiceId)?.service_name ?? "servisu"} />
           <div>
             <Card>
               <CardHeader title="Přidat servis pomocí pozvánky" description="Máte kód z e-mailu s pozvánkou do dalšího servisu? Zadejte ho a přidáte se bez odhlášení." />
