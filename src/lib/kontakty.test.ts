@@ -97,7 +97,8 @@ describe("profil pro iPhone (.mobileconfig)", async () => {
     const x = profilIphone({ login: "jobi-abc", heslo: "a<b&c", servis: "Servis & spol." });
     expect(x).toContain("<key>PayloadType</key><string>com.apple.carddav.account</string>");
     expect(x).toContain("<key>CardDAVHostName</key><string>api.appjobi.com</string>");
-    expect(x).toContain("<key>CardDAVPrincipalURL</key><string>/carddav/</string>");
+    // Celá adresa – s pouhou cestou iPhone účet přidal, ale nikdy se nepřipojil (27. 10. 2026).
+    expect(x).toContain("<key>CardDAVPrincipalURL</key><string>https://api.appjobi.com/carddav/</string>");
     expect(x).toContain("<key>CardDAVUsername</key><string>jobi-abc</string>");
     expect(x).toContain("<key>CardDAVPassword</key><string>a&lt;b&amp;c</string>");
     expect(x).toContain("Zákazníci Servis &amp; spol.");

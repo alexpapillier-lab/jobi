@@ -71,7 +71,7 @@ export function profilIphone(p: { login: string; heslo: string; servis: string }
       <key>CardDAVAccountDescription</key><string>${xml(popis)}</string>
       <key>CardDAVHostName</key><string>${KONTAKTY_SERVER}</string>
       <key>CardDAVPort</key><integer>443</integer>
-      <key>CardDAVPrincipalURL</key><string>${KONTAKTY_CESTA}</string>
+      <key>CardDAVPrincipalURL</key><string>https://${KONTAKTY_SERVER}${KONTAKTY_CESTA}</string>
       <key>CardDAVUseSSL</key><true/>
       <key>CardDAVUsername</key><string>${xml(p.login)}</string>
       <key>CardDAVPassword</key><string>${xml(p.heslo)}</string>
