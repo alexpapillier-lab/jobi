@@ -333,8 +333,6 @@ export default function Orders({
     }
   }, [closeDetailWhen]);
 
-  useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu, cloudTicketsRef, ticketsLoading });
-
   // Cloud mode only: show only cloud tickets
   const { activeBranchId, isMulti: hasBranches, branches, branchById, branchForNew } = useBranches();
   const [moveBranchOpen, setMoveBranchOpen] = useState(false);
@@ -388,6 +386,17 @@ export default function Orders({
   /** Pro sloučení zakázky načtené po konfliktu (čte se mimo render). */
   const dirtyFlagsRef = useRef(dirtyFlags);
   dirtyFlagsRef.current = dirtyFlags;
+
+  useRealtimeZakazek({
+    activeServiceId,
+    isEditing,
+    detailId,
+    setCloudTickets,
+    evidenceZapisu,
+    cloudTicketsRef,
+    ticketsLoading,
+    rozepsaneVDetailu: () => dirtyFlagsRef.current,
+  });
 
   /**
    * Souběžná úprava (src/lib/editaceZamek.ts): zakázka, jak byla při

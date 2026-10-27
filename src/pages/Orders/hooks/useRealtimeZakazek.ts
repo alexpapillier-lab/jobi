@@ -8,12 +8,18 @@
  * zakázky změněné od poslední známé změny (src/lib/zivyOdber.ts) – realtime
  * zmeškané události znovu nepošle a seznam by zůstal pozadu až do obnovení
  * stránky (hlášení majitele 27. 10. 2026).
+ *
+ * Otevřená zakázka si navíc drží rozepsanou diagnostiku a fotky (ukládají se
+ * až při zavření detailu). Bez toho řádek z databáze přepsal napsaný text
+ * a nahranou fotku prázdnem – stačil návrat do okna po uložení PDF
+ * (IRP26000284, 27. 10. 2026).
  */
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { devLog } from "../../../lib/devLog";
 import { showToast } from "../../../components/Toast";
 import { sloucZakazkuZDb, type EvidenceZapisu } from "../../../lib/slouceniZakazky";
+import { sloucSRozepsanym, type RozepsaneVDetailu } from "../../../lib/editaceZamek";
 import { odebirejZmeny } from "../../../lib/zivyOdber";
 import { mapSupabaseTicketToTicketEx } from "../mapovani";
 import type { TicketEx } from "../typy";
@@ -38,7 +44,12 @@ type Vstup = {
   cloudTicketsRef: MutableRefObject<TicketEx[]>;
   /** První načtení seznamu ještě běží – dotahovat není k čemu. */
   ticketsLoading: boolean;
+  /** Co je v otevřeném detailu rozepsané a neuložené (dirty flags). */
+  rozepsaneVDetailu: () => RozepsaneVDetailu;
 };
+
+/** Rozepsaná diagnostika otevřené zakázky – ta se při sloučení s databází drží. */
+export type RozepsanyDetail = { id: string; rozepsane: RozepsaneVDetailu };
 
 /** Od kdy dotahovat: nejnovější `updated_at` v seznamu minus rezerva. */
 export function hraniceDotazeni(zakazky: readonly Pick<TicketEx, "updatedAt">[], ted = Date.now()): string {
@@ -56,7 +67,7 @@ export function hraniceDotazeni(zakazky: readonly Pick<TicketEx, "updatedAt">[],
  * Promítne řádek z databáze (realtime nebo dotažení) do seznamu: smazaný
  * vyřadí, nový zařadí podle `created_at`, existující sloučí s pamětí.
  */
-export function promitniRadek(prev: TicketEx[], radek: any, evidence: EvidenceZapisu): TicketEx[] {
+export function promitniRadek(prev: TicketEx[], radek: any, evidence: EvidenceZapisu, detail?: RozepsanyDetail): TicketEx[] {
   const nova = mapSupabaseTicketToTicketEx(radek);
   if (radek?.deleted_at != null) {
     return prev.some((t) => t.id === nova.id) ? prev.filter((t) => t.id !== nova.id) : prev;
@@ -70,7 +81,10 @@ export function promitniRadek(prev: TicketEx[], radek: any, evidence: EvidenceZa
     // opravu, kterou nikdo nevidí. Stejně se hned ukládá kontrola po
     // opravě a náhradní zařízení – ozvěna staršího zápisu by přepsala
     // kliknutí, které přišlo mezitím. Pravidlo: src/lib/slouceniZakazky.ts.
-    const sloucena = sloucZakazkuZDb(existing, nova, evidence, nova.id);
+    const sloucena =
+      detail?.id === nova.id
+        ? sloucSRozepsanym(existing, nova, evidence, nova.id, detail.rozepsane)
+        : sloucZakazkuZDb(existing, nova, evidence, nova.id);
     return prev.map((t) => (t.id === nova.id ? sloucena : t));
   }
   // Nová – zařadit podle created_at, nejnovější nahoře.
@@ -81,7 +95,7 @@ export function promitniRadek(prev: TicketEx[], radek: any, evidence: EvidenceZa
   });
 }
 
-export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu, cloudTicketsRef, ticketsLoading }: Vstup) {
+export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu, cloudTicketsRef, ticketsLoading, rozepsaneVDetailu }: Vstup) {
   /* Detail a režim úprav se čtou přes ref: dřív byly v závislostech efektu
      a každé otevření detailu odběr zrušilo a přihlásilo znovu – zbytečně,
      a po dobu přihlašování mohla událost utéct. */
@@ -93,6 +107,8 @@ export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCl
   evidenceRef.current = evidenceZapisu;
   const nacitaRef = useRef(ticketsLoading);
   nacitaRef.current = ticketsLoading;
+  const rozepsaneRef = useRef(rozepsaneVDetailu);
+  rozepsaneRef.current = rozepsaneVDetailu;
 
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
@@ -100,6 +116,8 @@ export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCl
     const serviceId = activeServiceId;
     let zruseno = false;
     let dotahuje = false;
+    const detail = (): RozepsanyDetail | undefined =>
+      detailIdRef.current ? { id: detailIdRef.current, rozepsane: rozepsaneRef.current() } : undefined;
 
     const topic = `tickets:${serviceId}`;
     devLog("[RT] subscribe", topic, new Date().toISOString());
@@ -121,7 +139,7 @@ export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCl
             showToast("Zakázka se změnila na pozadí", "info");
           }
         }
-        setCloudTickets((prev) => promitniRadek(prev, radek, evidenceRef.current()));
+        setCloudTickets((prev) => promitniRadek(prev, radek, evidenceRef.current(), detail()));
       } else if (payload.eventType === "DELETE") {
         // Hard delete - remove from list
         const deletedId = (payload.old as any)?.id || (payload.new as any)?.id;
@@ -157,7 +175,7 @@ export function useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCl
         setCloudTickets((prev) => {
           let dalsi = prev;
           // Od nejstarší, ať novější změna téže zakázky vyhraje.
-          for (let i = zmenene.length - 1; i >= 0; i--) dalsi = promitniRadek(dalsi, zmenene[i], evidenceRef.current());
+          for (let i = zmenene.length - 1; i >= 0; i--) dalsi = promitniRadek(dalsi, zmenene[i], evidenceRef.current(), detail());
           return dalsi;
         });
       } finally {
