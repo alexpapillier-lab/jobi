@@ -1950,8 +1950,11 @@ export default function Orders({
    * Tisk / export z hlavičky detailu reklamace: „Přijetí reklamace“ při
    * příjmu, „Výdejka reklamace“ s provedenými zákroky při vrácení zařízení.
    */
-  const runClaimDocument = async (action: DocMode, docType: "prijemka_reklamace" | "vydejka_reklamace" = "prijemka_reklamace") => {
-    if (!detailedClaim) return;
+  const runClaimDocument = async (action: DocMode, docType: "prijemka_reklamace" | "vydejka_reklamace" = "prijemka_reklamace", claimId?: string) => {
+    // Z karty v seznamu přijde id reklamace; otevřený detail nemusí být ta samá.
+    const zDetailu = !claimId || claimId === detailedClaim?.id;
+    const zaklad = zDetailu ? detailedClaim : cloudClaims.find((c) => c.id === claimId);
+    if (!zaklad) return;
     const sid = activeServiceId ?? undefined;
     if (!sid) {
       showToast("Vyberte servis pro tisk.", "error");
@@ -1959,9 +1962,9 @@ export default function Orders({
     }
     // Rozepsané zákroky se před tiskem dopíšou; tiskne se to, co je na
     // obrazovce, i kdyby zápis čekal ve frontě na spojení.
-    await ulozZakrokyHned();
+    if (zDetailu) await ulozZakrokyHned();
     const claim: WarrantyClaimRow =
-      claimResolutionDraft !== null ? { ...detailedClaim, resolution_summary: zakrokyDoSloupce(claimResolutionDraft) } : detailedClaim;
+      zDetailu && claimResolutionDraft !== null ? { ...zaklad, resolution_summary: zakrokyDoSloupce(claimResolutionDraft) } : zaklad;
     const original = cloudTickets.find((t) => t.id === claim.source_ticket_id) as TicketEx | undefined;
     // Údaje pobočky reklamace mají přednost (stejně jako u zakázkových dokladů).
     // Výdejka se tiskne při vrácení zařízení – bez zapsaného data vydání je to
@@ -2086,6 +2089,7 @@ export default function Orders({
         zajistiPlnouZakazku={zajistiPlnouZakazku}
         openQuickPrintTicketRef={openQuickPrintTicketRef}
         setOpenQuickPrintTicket={setOpenQuickPrintTicket}
+        tiskReklamace={(claimId, action, docType) => void runClaimDocument(action, docType, claimId)}
         viewersByTicket={viewersByTicket}
         smsPanelOpen={smsPanelOpen}
         detailId={detailId}

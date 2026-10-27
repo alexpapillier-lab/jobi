@@ -317,3 +317,36 @@ test("zákrok u reklamace jde přidat z ceníku – s cenou 0, kterou jde přeps
   await expect(page.getByPlaceholder("0 = zdarma").first()).toHaveValue("350");
   await expect(nazvy.nth(1)).toHaveValue("Ruční zákrok");
 });
+
+test("reklamace se vytiskne rovnou z karty v seznamu, bez dotazu na neexistující zakázku", async ({ page }) => {
+  /*
+   * Karta reklamace dřív dostala tiskové tlačítko zakázky: id reklamace šlo
+   * do dotažení zakázky, server vrátil PGRST116 a nabídka tisku se vůbec
+   * neotevřela. Na to denně narážel průzkumník (pruzkumnik.spec.ts).
+   */
+  test.setTimeout(150_000);
+  await zachytavejTisk(page);
+  const chyby: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error" && /re-fetching ticket/.test(m.text())) chyby.push(m.text()); });
+  await prihlasSe(page, "owner");
+  const zakaznik = testovaciJmeno("Reklamace tisk");
+  await zalozReklamaci(page, zakaznik, "Telefon (tisk ze seznamu)");
+  await zavriDetail(page);
+
+  await page.getByRole("button", { name: /^Reklamace/ }).first().click();
+  const tisk = page.getByTitle("Tisk a export dokumentů");
+  const karta = page.locator("div", { hasText: zakaznik }).filter({ has: tisk }).last();
+  await karta.getByTitle("Tisk a export dokumentů").click();
+  const nabidka = page.getByRole("menu");
+  // Reklamace má svoje doklady, ne zakázkový a záruční list.
+  await expect(nabidka.getByText("Výdejka reklamace", { exact: true })).toBeVisible();
+  await expect(nabidka.getByText("Zakázkový list")).toHaveCount(0);
+  await page.evaluate(() => { delete (window as unknown as { __tisk?: string }).__tisk; });
+  await nabidka.getByText("Přijetí reklamace", { exact: true }).locator("xpath=ancestor::div[1]").getByRole("button", { name: "Tisk" }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __tisk?: string }).__tisk ?? ""), { timeout: 45_000 })
+    .toContain(zakaznik);
+  // Klik v nabídce neotevřel detail reklamace.
+  await expect(page.locator('[data-tour="reklamace-tisk"]:visible')).toHaveCount(0);
+  expect(chyby).toEqual([]);
+});

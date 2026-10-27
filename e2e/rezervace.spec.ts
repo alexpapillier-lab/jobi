@@ -26,7 +26,14 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
      datum test po jeho uplynutí položí, i když rezervace fungují. */
   const termin = new Date(Date.now() + 24 * 60 * 60 * 1000);
   while (termin.getUTCDay() === 0 || termin.getUTCDay() === 6) termin.setUTCDate(termin.getUTCDate() + 1);
-  const preferredAt = `${termin.toISOString().slice(0, 10)}T10:30:00+02:00`;
+  /* 10:30 pražského času v ten den – posun se bere z kalendáře, ne napevno.
+     Napevno zapsané „+02:00“ od přechodu na zimní čas (25. 10.) posílalo
+     9:30 a test denně padal, přestože rezervace fungovaly. Aplikace termín
+     ukazuje v Europe/Prague (timezoneId v playwright.config.ts). */
+  const posun = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Prague", timeZoneName: "longOffset" })
+    .formatToParts(new Date(`${termin.toISOString().slice(0, 10)}T10:30:00Z`))
+    .find((p) => p.type === "timeZoneName")!.value.replace("GMT", "");
+  const preferredAt = `${termin.toISOString().slice(0, 10)}T10:30:00${posun}`;
   const terminPopisek = `${termin.getUTCDate()}. ${termin.getUTCMonth() + 1}. 10:30`;
   const odpoved = await request.post(FUNKCE, {
     data: { service: "e2e-servis", name: zakaznik, phone: "+420777555333", email: "rezervace@example.com", device: "iPad Air (rezervace)", repair: "Prasklé sklo", repair_id: oprava.id, model_id: model.id, preferred_at: preferredAt, note: "Přijdu v poledne" },

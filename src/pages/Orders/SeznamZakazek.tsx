@@ -10,7 +10,7 @@
 import React, { useCallback, useMemo } from "react";
 import { Button, Segmented } from "../../components/ui";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../../components/tickets";
-import { StatusPicker } from "../../components/orders";
+import { PrintMenu, StatusPicker } from "../../components/orders";
 import { StatusFilter, type StatusFilterOption } from "../../components/orders/StatusFilter";
 import { OnboardingChecklist } from "../../components/OnboardingChecklist";
 import { SectionHeading } from "../../components/SectionHeading";
@@ -21,6 +21,7 @@ import type { TicketViewer } from "../../lib/presence";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { ClaimsSubGroup, GroupKey, TicketEx, UIConfig } from "./typy";
 import { inputStyle } from "./styly";
+import type { DocMode } from "./tiskZakazky";
 import { META_PREVEDENO, STAV_PREVEDENO } from "../../lib/reklamacePrijem";
 
 /** Řádek smíšeného seznamu (Vše / Dokončené se zapnutým míšením reklamací). */
@@ -90,6 +91,8 @@ type Props = {
   zajistiPlnouZakazku: (ticketId: string) => Promise<TicketEx | null>;
   openQuickPrintTicketRef: React.MutableRefObject<TicketEx | null>;
   setOpenQuickPrintTicket: React.Dispatch<React.SetStateAction<TicketEx | null>>;
+  /** Tisk / PDF dokladu reklamace přímo z karty v seznamu (bez otevření detailu). */
+  tiskReklamace: (claimId: string, action: DocMode, docType: "prijemka_reklamace" | "vydejka_reklamace") => void;
   viewersByTicket: Record<string, TicketViewer[]>;
   smsPanelOpen: boolean;
   detailId: string | null;
@@ -155,6 +158,7 @@ export function SeznamZakazek({
   zajistiPlnouZakazku,
   openQuickPrintTicketRef,
   setOpenQuickPrintTicket,
+  tiskReklamace,
   viewersByTicket,
   smsPanelOpen,
   detailId,
@@ -202,6 +206,27 @@ export function SeznamZakazek({
       ><PrintIcon size={small ? 13 : 15} /></button>
     );
   }, [canPrintExport, setOpenQuickPrintTicket, zajistiPlnouZakazku]);
+
+  /* Reklamace nemá zakázkový ani záruční list – má svoje doklady. Dřív karta
+     reklamace dostala stejné tlačítko jako zakázka: id reklamace šlo do
+     dotažení zakázky, dotaz skončil PGRST116 a nabídka tisku se neotevřela
+     vůbec (odhalil to e2e průzkumník, říjen 2026). */
+  const renderClaimPrintButton = useCallback((claimId: string) => {
+    if (!canPrintExport) return null;
+    // Klik v nabídce (je v portálu) by jinak probublal Reactem až na kartu a otevřel detail.
+    return (
+      <span style={{ display: "inline-flex" }} onClick={(e) => e.stopPropagation()}>
+      <PrintMenu
+        size="sm"
+        label={null}
+        rows={[
+          { key: "prijemka_reklamace", label: "Přijetí reklamace", icon: <DocumentIcon size={14} />, onPrint: () => tiskReklamace(claimId, "print", "prijemka_reklamace"), onExport: () => tiskReklamace(claimId, "export", "prijemka_reklamace") },
+          { key: "vydejka_reklamace", label: "Výdejka reklamace", icon: <DocumentIcon size={14} />, onPrint: () => tiskReklamace(claimId, "print", "vydejka_reklamace"), onExport: () => tiskReklamace(claimId, "export", "vydejka_reklamace") },
+        ]}
+      />
+      </span>
+    );
+  }, [canPrintExport, tiskReklamace]);
 
   const smsUnreadForTicket = (ticketId: string) => {
     if (smsPanelOpen && detailId === ticketId) return 0;
@@ -290,12 +315,6 @@ export function SeznamZakazek({
     const currentStatus = normalizeStatus(rawStatus);
     const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
     const statusColor = claimMeta?.bg || "var(--border)";
-    const isSmall = ordersCfg.displayMode === "compact" || ordersCfg.displayMode === "compact-extra";
-    const claimAsCardData: TicketCardData = {
-      id: c.id, code: c.code, customerName: c.customer_name ?? "—",
-      deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "",
-      createdAt: c.created_at ?? "", status: c.status,
-    };
     return (
       <ClaimCard
         key={`${keyPrefix}${c.id}`}
@@ -307,7 +326,7 @@ export function SeznamZakazek({
         zvyrazneni={ordersCfg.zvyrazneniStavu}
         onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
         statusPicker={<StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-        printButton={renderPrintButton(claimAsCardData, isSmall)}
+        printButton={renderClaimPrintButton(c.id)}
       />
     );
   };
@@ -504,7 +523,7 @@ export function SeznamZakazek({
               statusPickerForTicket={(t, st) => renderStatusPicker(t.id, st)}
               statusPickerForClaim={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
               printButtonForTicket={(t) => renderPrintButton(t, true)}
-              printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
+              printButtonForClaim={(c) => renderClaimPrintButton(c.id)}
               customOrder={poradiReklamaci}
               smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
               zvyrazneni={ordersCfg.zvyrazneniStavu}
@@ -530,7 +549,7 @@ export function SeznamZakazek({
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
             statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-            printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
+            printButtonFor={(c) => renderClaimPrintButton(c.id)}
             customOrder={poradiReklamaci}
             zvyrazneni={ordersCfg.zvyrazneniStavu}
           />
@@ -695,7 +714,7 @@ export function SeznamZakazek({
                 normalizeStatus={normalizeStatus}
                 onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
                 statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-                printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
+                printButtonFor={(c) => renderClaimPrintButton(c.id)}
                 customOrder={ordersCfg.statusGroupedOrder}
                 zvyrazneni={ordersCfg.zvyrazneniStavu}
               />
