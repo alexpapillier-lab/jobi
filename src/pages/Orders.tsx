@@ -333,7 +333,7 @@ export default function Orders({
     }
   }, [closeDetailWhen]);
 
-  useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu });
+  useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu, cloudTicketsRef, ticketsLoading });
 
   // Cloud mode only: show only cloud tickets
   const { activeBranchId, isMulti: hasBranches, branches, branchById, branchForNew } = useBranches();

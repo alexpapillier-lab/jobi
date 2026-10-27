@@ -1,4 +1,5 @@
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "./supabaseClient";
+import { odebirejZmeny } from "./zivyOdber";
 import type { DevicesData } from "./catalogStorage";
 import type { PerformedRepair } from "../components/orders/types";
 import type { DeviceRow, NewOrderDraft, TicketEx } from "../pages/Orders/typy";
@@ -155,18 +156,23 @@ export async function odesliWebhookyHned(serviceId: string): Promise<void> {
   }
 }
 
-/** Realtime: každá změna objednávek servisu zavolá callback. */
-export function sledujObjednavky(serviceId: string, onZmena: (typ: "INSERT" | "UPDATE" | "DELETE") => void): () => void {
-  if (!supabase) return () => {};
-  const channel = supabase
-    .channel(`web_objednavky:${serviceId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "web_objednavky", filter: `service_id=eq.${serviceId}` }, (payload) => {
-      onZmena(payload.eventType as "INSERT" | "UPDATE" | "DELETE");
-    })
-    .subscribe();
-  return () => {
-    void supabase?.removeChannel(channel);
-  };
+/**
+ * Realtime: každá změna objednávek servisu zavolá callback. `dotahni` se zavolá
+ * po výpadku spojení, návratu do okna nebo probuzení (src/lib/zivyOdber.ts).
+ */
+export function sledujObjednavky(
+  serviceId: string,
+  onZmena: (typ: "INSERT" | "UPDATE" | "DELETE") => void,
+  dotahni?: () => void,
+): () => void {
+  return odebirejZmeny(
+    `web_objednavky:${serviceId}`,
+    (kanal) =>
+      kanal.on("postgres_changes", { event: "*", schema: "public", table: "web_objednavky", filter: `service_id=eq.${serviceId}` }, (payload) => {
+        onZmena(payload.eventType as "INSERT" | "UPDATE" | "DELETE");
+      }),
+    dotahni ? () => dotahni() : undefined,
+  );
 }
 
 /** Sledovací čísla s odkazem na sledování (když jde dopravce poznat). */

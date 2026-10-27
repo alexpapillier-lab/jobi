@@ -59,7 +59,7 @@ export function useObjednavky(activeServiceId: string | null, upozornitNaNove = 
     const odhlasit = sledujObjednavky(activeServiceId, (typ) => {
       if (typ === "INSERT" && upozornitNaNove) showToast("Nová objednávka z webu", "info");
       void nacti();
-    });
+    }, () => void nacti());
     const onZmena = () => void nacti();
     const onViditelnost = () => { if (document.visibilityState === "visible") void nacti(); };
     window.addEventListener("jobsheet:objednavky-zmena", onZmena);

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { fetchAllPages } from "../../../lib/fetchAllPages";
+import { odebirejZmeny } from "../../../lib/zivyOdber";
 import { normalizeError } from "../../../utils/errorNormalizer";
 import { SLOUPCE_SEZNAMU } from "../../../lib/sloupceZakazky";
 import { mapSupabaseTicketToTicketEx } from "../mapovani";
@@ -226,22 +227,19 @@ export function useNacitaniZakazek(activeServiceId: string | null) {
     );
     if (!error && data) setCloudClaims(data);
   }, [activeServiceId, supabase]);
-  // Realtime subscription for warranty_claims
+  // Realtime subscription for warranty_claims; po výpadku se seznam načte znovu.
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
-    const topic = `warranty_claims:${activeServiceId}`;
-    const client = supabase;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
-        () => refetchClaims()
-      )
-      .subscribe();
-    return () => {
-      if (client) client.removeChannel(channel);
-    };
+    return odebirejZmeny(
+      `warranty_claims:${activeServiceId}`,
+      (kanal) =>
+        kanal.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
+          () => refetchClaims()
+        ),
+      () => void refetchClaims()
+    );
   }, [activeServiceId, supabase, refetchClaims]);
 
   return {

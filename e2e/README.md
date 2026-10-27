@@ -25,6 +25,7 @@ takový test neuspokojí.
 | `pruvodci.spec.ts` | otazník → Průvodce a nápověda → Spustit, Další, Hotovo, Přeskočit průvodce |
 | `kalendar.spec.ts` | slíbený termín dokončení |
 | `soubezna-prace.spec.ts` | dva lidé naráz, práva technika |
+| `obnova-dat.spec.ts` | otevřené Zakázky se obnoví samy i po výpadku realtime, návratu na kartu a otevření detailu |
 | `servisy.spec.ts` | založení servisu, zkratka v číslech zakázek, pozvánky, smazání servisu |
 | `onboarding.spec.ts` | první hodina nového zákazníka: registrace, servis, První kroky, zakázka, faktura, tisk, portál |
 | `prohlizece.spec.ts` | hlavní cesty v Safari a Firefoxu, portál v mobilním Safari |
