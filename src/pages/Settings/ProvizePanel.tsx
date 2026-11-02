@@ -76,6 +76,7 @@ type Vyuctovani = {
 
 type Clen = { user_id: string; nickname: string | null; email: string | null; role: string; sdileno: boolean };
 
+type Cekajici = { pocet: number; s_cenou: number; zaklad: number; provize: number; podle_stavu: { stav: string; pocet: number; provize: number }[] };
 type Prehled = { nastaveni: Nastaveni | null; statusy_servisu: string[]; vyuctovani: Vyuctovani[]; polozky: Polozka[] };
 
 const KLIC_SERVISU = "jobsheet_owner_provize_service";
@@ -97,6 +98,8 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   /** Rozhodnuté nejasné zakázky, u kterých majitel otevřel „Změnit“. */
   const [otevrene, setOtevrene] = useState<Set<number>>(new Set());
   /** Rozepsané vlastní částky podle id řádku. */
+  /** Odhad z rozpracovaných zakázek, které ještě nejsou vydané (jen čtení, nic se nezapisuje). */
+  const [cekajici, setCekajici] = useState<Cekajici | null>(null);
   const [castky, setCastky] = useState<Record<number, string>>({});
   const [rozhoduji, setRozhoduji] = useState<number | null>(null);
   const [hledat, setHledat] = useState("");
@@ -135,6 +138,9 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         if (error) throw error;
         const p = d as Prehled;
         setData(p);
+        // Odhad je jen doplněk: kdyby selhal (starší databáze), přehled se ukáže i bez něj.
+        const { data: ce, error: eCe } = await db.rpc("provize_cekajici", { p_service_id: sid });
+        setCekajici(!eCe && ce && typeof ce === "object" ? (ce as Cekajici) : null);
         const { data: cl } = await db.rpc("provize_clenove", { p_service_id: sid });
         setClenove(Array.isArray(cl) ? (cl as Clen[]) : []);
         setFormSazba(String(Math.round((p.nastaveni?.sazba ?? 0.075) * 10000) / 100).replace(".", ","));
@@ -513,6 +519,19 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                     {keKontrole.length > 0 && ` · ${keKontrole.length} čeká na kontrolu`}
                   </div>
                 </div>
+                {cekajici && cekajici.pocet > 0 && (
+                  <div
+                    style={dlazdice}
+                    title={cekajici.podle_stavu.map((x) => `${x.stav}: ${x.pocet} × · ${kc(x.provize)}`).join("\n")}
+                  >
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>Čeká na vydání (odhad)</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>{kc(cekajici.provize)}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {cekajici.pocet} nevydaných zakázek · základ {kc(cekajici.zaklad)}
+                      {cekajici.s_cenou < cekajici.pocet && ` · ${cekajici.pocet - cekajici.s_cenou} zatím bez ceny`}
+                    </div>
+                  </div>
+                )}
                 <div style={dlazdice}>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>Vyúčtováno celkem</div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>{kc(vyuctovanoCelkem)}</div>
