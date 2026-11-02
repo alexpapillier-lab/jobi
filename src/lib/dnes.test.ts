@@ -52,6 +52,7 @@ function z(o: Partial<ZakazkaDnes> = {}): ZakazkaDnes {
     assignedTo: null,
     branchId: null,
     locationBranchId: null,
+    transitShipmentId: null,
     quoteStatus: null,
     ...o,
   };

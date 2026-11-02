@@ -6,6 +6,8 @@ import { useAuth } from "../auth/AuthProvider";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { useChatZapnuty } from "../hooks/useChatZapnuty";
+import { useNastaveniServisu } from "./Orders/hooks/useNastaveniServisu";
+import { jeMimoPobocku, umisteniZakazky } from "../lib/zasilky";
 import { otevriChat } from "../lib/chat";
 import type { Rezervace } from "../lib/rezervace";
 import {
@@ -88,7 +90,8 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
   const { session } = useAuth();
   const mujId = session?.user?.id ?? null;
   const { statuses, loading: stavyNacitam, getByKey } = useStatuses();
-  const { activeBranchId, isMulti, activeBranch } = useBranches();
+  const { activeBranchId, isMulti, activeBranch, branchById } = useBranches();
+  const { zasilkyZapnuty } = useNastaveniServisu(activeServiceId);
   const chatZapnuty = useChatZapnuty(activeServiceId);
   const pridelovani = usePridelovaniTechnika(activeServiceId);
 
@@ -115,7 +118,17 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
     return () => window.removeEventListener("jobsheet:ui-updated", na);
   }, []);
 
-  const zakazky = useMemo(() => filterByBranch(vsechny, activeBranchId), [vsechny, activeBranchId]);
+  /* Zakázky v zásilce nebo fyzicky na jiné pobočce se do sekcí nepočítají (nejsou
+     na pobočce, nejde s nimi pracovat); ukazuje je karta Mimo pobočku. */
+  const skryvatMimo = zasilkyZapnuty && isMulti && !!activeBranchId;
+  const { zakazky, mimoPobocku } = useMemo(() => {
+    const vPobocce = filterByBranch(vsechny, activeBranchId);
+    if (!skryvatMimo) return { zakazky: vPobocce, mimoPobocku: [] as ZakazkaDnes[] };
+    return {
+      zakazky: vPobocce.filter((z) => !jeMimoPobocku(z, activeBranchId)),
+      mimoPobocku: vPobocce.filter((z) => jeMimoPobocku(z, activeBranchId)),
+    };
+  }, [vsechny, activeBranchId, skryvatMimo]);
   const koncove = useMemo(() => new Set(koncoveStavy), [koncoveStavy]);
   const pocetMojich = useMemo(
     () => (mujId ? zakazky.filter((z) => z.assignedTo === mujId && !koncove.has(z.status ?? "")).length : 0),
@@ -161,6 +174,14 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
     return z.assignedTo === mujId ? "vy" : jmeno(z.assignedTo);
   };
   const podtitulek = (z: ZakazkaDnes) => [z.customerName, kdo(z)].filter(Boolean).join(" · ");
+
+  const kdeJe = (z: ZakazkaDnes) => {
+    const u = umisteniZakazky(z);
+    const nazev = (id: string) => branchById(id)?.name ?? "jiná pobočka";
+    if (u.druh === "na_ceste") return `na cestě → ${nazev(u.doBranchId)}`;
+    if (u.druh === "jinde") return `na pobočce ${nazev(u.branchId)}`;
+    return "";
+  };
 
   const radek = (z: ZakazkaDnes, poznamka: string, ton: TonSekce) => (
     <RadekSekce
@@ -373,6 +394,20 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
                 z.expectedAt && new Date(z.expectedAt).getTime() < ted.getTime() ? "danger" : "accent",
               ),
             )}
+          </SekceKarta>
+        )}
+
+        {mimoPobocku.length > 0 && (
+          <SekceKarta
+            dataTour="dnes-mimo-pobocku"
+            titulek="Mimo pobočku"
+            popis="Zakázky v zásilce nebo fyzicky na jiné pobočce. V ostatních kartách nejsou, dokud se nevrátí."
+            pocet={mimoPobocku.length}
+            ton="muted"
+            nacitam={nacitam}
+            prazdno=""
+          >
+            {mimoPobocku.map((z) => radek(z, kdeJe(z), "muted"))}
           </SekceKarta>
         )}
 

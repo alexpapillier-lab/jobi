@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StatusMeta } from "../../../state/StatusesStore";
 import type { StatusFilterOption } from "../../../components/orders/StatusFilter";
-import { umisteniZakazky, type NastaveniZasilek } from "../../../lib/zasilky";
+import { jeMimoPobocku, umisteniZakazky, type NastaveniZasilek } from "../../../lib/zasilky";
 import { rozpoznejRoleStavu } from "../../../lib/dnes";
 import { hlasiTermin, podleTerminu, stavTerminu, type StavTerminu } from "../../../lib/terminZakazky";
 import type { WarrantyClaimRow } from "./useWarrantyClaims";
@@ -104,11 +104,24 @@ export function useFiltrSeznamu({
   }, [tickets, statusById, normalizeStatus, isFinal, kPrevzeti, ted]);
 
 
+  /**
+   * Zakázky v zásilce nebo fyzicky na jiné pobočce se v běžných záložkách
+   * neukazují (jen v Přesunech a při hledání). Bez záložky Přesuny by byly
+   * nedostupné, proto se skrývá jen když záložka existuje.
+   */
+  const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
+  const hledam = query.trim() !== "";
+  const skrytaMimoPobocku = useCallback(
+    (t: TicketEx): boolean => filtrPresunu && !!activeBranchId && jeMimoPobocku(t, activeBranchId),
+    [filtrPresunu, activeBranchId],
+  );
+
   /** Patří zakázka do zvolené záložky (Vše / Aktivní / Moje / Přesuny / Dokončené)? */
   const patriDoSkupiny = useCallback(
     (t: TicketEx, st: string | null): boolean => {
       // If statuses are not ready, show all tickets
       if (st === null) return true;
+      if (activeGroup !== "presun" && !hledam && skrytaMimoPobocku(t)) return false;
       if (activeGroup === "all") return true;
       if (activeGroup === "final") return isFinal(st);
       // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
@@ -119,7 +132,7 @@ export function useFiltrSeznamu({
       if (activeGroup === "termin") return hlasiTermin(terminById.get(t.id) ?? null);
       return !isFinal(st);
     },
-    [activeGroup, mojeId, isFinal, terminById],
+    [activeGroup, mojeId, isFinal, terminById, hledam, skrytaMimoPobocku],
   );
 
   /** Nabídka filtru podle stavu: jen stavy, které ve zvolené záložce opravdu jsou, s počtem. */
@@ -271,8 +284,10 @@ export function useFiltrSeznamu({
       const raw = (t.status as any) ?? statusById[t.id];
       const st = normalizeStatus(raw);
       if (activeStatusKey && st !== null && st !== activeStatusKey) continue;
-      all += 1;
       if (umisteniZakazky(t).druh !== "doma") presun += 1;
+      // Zakázky mimo pobočku se do ostatních počtů nepočítají (viz skrytaMimoPobocku).
+      if (skrytaMimoPobocku(t)) continue;
+      all += 1;
       if (hlasiTermin(terminById.get(t.id) ?? null)) termin += 1;
       if (st === null || !isFinal(st)) {
         active += 1;
@@ -292,9 +307,7 @@ export function useFiltrSeznamu({
       }
     }
     return { all, active, final, moje, presun, termin, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId, terminById]);
-
-  const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
+  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId, terminById, skrytaMimoPobocku]);
 
   // Vypnuté přidělování nesmí nechat seznam na skupině, která už neexistuje.
   useEffect(() => {

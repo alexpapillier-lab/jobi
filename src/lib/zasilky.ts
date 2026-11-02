@@ -62,6 +62,19 @@ export function umisteniZakazky(t: { branchId?: string | null; locationBranchId?
 }
 
 /**
+ * Je zakázka z pohledu aktivní pobočky „mimo“ – v zásilce (odeslané i
+ * očekávané) nebo fyzicky na jiné pobočce? Takové zakázky se v běžných
+ * seznamech neukazují, ať nepletou mezi tím, co je opravdu na pobočce.
+ * Bez aktivní pobočky („Všechny pobočky“) a u zakázek bez pobočky se nic neskrývá.
+ */
+export function jeMimoPobocku(t: { branchId?: string | null; locationBranchId?: string | null; transitShipmentId?: string | null }, pobockaId: string | null | undefined): boolean {
+  if (!pobockaId) return false;
+  if (!t.branchId && !t.locationBranchId) return false;
+  if (t.transitShipmentId) return true;
+  return (t.locationBranchId ?? t.branchId) !== pobockaId;
+}
+
+/**
  * Krátký štítek do seznamu: „Praha“ (fyzicky jinde), „Brno → Praha“ (na
  * cestě; `odkud` = pobočka odeslání zásilky), bez známého odkud „→ Praha“;
  * doma nic.

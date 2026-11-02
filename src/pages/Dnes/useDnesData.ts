@@ -29,7 +29,7 @@ import {
  * Stránka se načítá až při první návštěvě (App ji do té doby nemountuje).
  */
 
-const SLOUPCE = "id,code,title,status,customer_name,created_at,updated_at,expected_completion_at,assigned_to,branch_id,location_branch_id";
+const SLOUPCE = "id,code,title,status,customer_name,created_at,updated_at,expected_completion_at,assigned_to,branch_id,location_branch_id,transit_shipment_id";
 /** Stav cenové nabídky je portálový sloupec – stará databáze ho nemusí mít. */
 const SLOUPCE_S_NABIDKOU = `${SLOUPCE},quote_status`;
 /** Stejné sloupce jako lib/rezervace – příjem se z nich předvyplní. */

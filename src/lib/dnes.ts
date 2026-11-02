@@ -37,6 +37,8 @@ export type ZakazkaDnes = {
   assignedTo: string | null;
   branchId: string | null;
   locationBranchId: string | null;
+  /** Zásilka, ve které zakázka právě putuje; null = není na cestě. */
+  transitShipmentId: string | null;
   /** Stav cenové nabídky z portálu; chybí na databázi bez portálových sloupců. */
   quoteStatus: string | null;
 };
@@ -70,6 +72,7 @@ export function mapujZakazkuDnes(r: Record<string, unknown>): ZakazkaDnes {
     assignedTo: s(r.assigned_to),
     branchId: s(r.branch_id),
     locationBranchId: s(r.location_branch_id),
+    transitShipmentId: s(r.transit_shipment_id),
     quoteStatus: s(r.quote_status),
   };
 }

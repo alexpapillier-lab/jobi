@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisloZasilky, druhaPobocka, stavZasilkyText, htmlProtokolu, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
+import { cisloZasilky, druhaPobocka, stavZasilkyText, htmlProtokolu, jeMimoPobocku, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
 
 const nazev = (id: string) => ({ b: "Brno", p: "Praha" }[id] ?? id);
 
@@ -137,5 +137,28 @@ describe("krokyPresunu", () => {
     expect(krokyPresunu(t({ locationBranchId: null, transitShipmentId: "y" }), [tam, zpetSent], nazev, true).poOprave[0]).toMatchObject({ hotovo: false, poznamka: "Na cestě zpět" });
     const zpetDoma = { ...zpetSent, status: "received" as const, polozky: [{ ...zpetSent.polozky[0], receivedAt: "2026-09-13T08:00:00Z" }] };
     expect(krokyPresunu(t(), [tam, zpetDoma], nazev, true).poOprave[0]).toMatchObject({ hotovo: true });
+  });
+});
+
+describe("zakázka mimo pobočku", () => {
+  it("doma a fyzicky na aktivní pobočce není mimo", () => {
+    expect(jeMimoPobocku({ branchId: "b" }, "b")).toBe(false);
+    expect(jeMimoPobocku({ branchId: "b", locationBranchId: "p" }, "p")).toBe(false);
+  });
+
+  it("odeslaná jinam nebo fyzicky jinde je mimo", () => {
+    expect(jeMimoPobocku({ branchId: "b", locationBranchId: "p" }, "b")).toBe(true);
+  });
+
+  it("v zásilce je mimo pro odesílatele i příjemce, dokud nepřijde", () => {
+    const t = { branchId: "b", locationBranchId: "p", transitShipmentId: "z1" };
+    expect(jeMimoPobocku(t, "b")).toBe(true);
+    expect(jeMimoPobocku(t, "p")).toBe(true);
+    expect(jeMimoPobocku({ branchId: "b", locationBranchId: null, transitShipmentId: "z2" }, "b")).toBe(true);
+  });
+
+  it("bez aktivní pobočky nebo bez pobočky zakázky se nic neskrývá", () => {
+    expect(jeMimoPobocku({ branchId: "b", transitShipmentId: "z" }, null)).toBe(false);
+    expect(jeMimoPobocku({ transitShipmentId: "z" }, "b")).toBe(false);
   });
 });
