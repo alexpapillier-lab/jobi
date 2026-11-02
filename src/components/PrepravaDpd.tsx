@@ -111,7 +111,7 @@ export function PrepravaDpd({
             </Button>
           )}
           {jdeZrusit(ziva) && (
-            <Button size="sm" variant="ghost" disabled={!!pracuje} onClick={() => void akce("cancel", async () => { await zrusitDpd(shipmentId); showToast(ziva.pickupOrderId ? "Svoz u DPD zrušen." : "Objednávka zrušena. Štítek už nepoužívejte.", "success"); })}>
+            <Button size="sm" variant="ghost" disabled={!!pracuje} onClick={() => void akce("cancel", async () => { const varovani = await zrusitDpd(shipmentId); if (varovani) showToast(varovani, "error"); else showToast(ziva.pickupOrderId ? "Svoz u DPD zrušen." : "Objednávka zrušena. Štítek už nepoužívejte.", "success"); })}>
               {pracuje === "cancel" ? "Ruším…" : ziva.mode === "courier" ? "Zrušit svoz" : "Zrušit štítek"}
             </Button>
           )}

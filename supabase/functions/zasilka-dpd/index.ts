@@ -276,16 +276,26 @@ async function zrusit(svc: Svc, uid: string, shipmentId: string) {
   if (!o) throw new Chyba("K zásilce není objednaná přeprava.", 404);
   if (o.status === "delivered") throw new Chyba("Balík je už doručený – přepravu nejde zrušit.");
   if (o.status === "in_transit") throw new Chyba("Balík už je na cestě – zrušení řešte s DPD.");
+  // 404 od DPD = svoz tam nenašli. Může to být zrušený už dřív (opakované
+  // kliknutí), ale i špatné číslo, a to by kurýr přijel zbytečně. Objednávku
+  // v Jobi zrušíme tak či tak (jinak by uživatel zůstal zaseknutý), jen to
+  // nesmíme vydávat za potvrzené zrušení: vrací se varování a uloží se do
+  // stavu objednávky.
+  let varovani: string | null = null;
   if (o.pickup_order_id) {
     const dpd = await ucetDpd(svc, o.service_id);
     const res = await dpdFetch(dpd, `/pickup-orders/${encodeURIComponent(o.pickup_order_id)}`, { method: "DELETE" });
-    if (!res.ok && res.status !== 404) throw new Chyba(`Svoz se u DPD zrušit nepodařilo – ${await textChybyDpd(res)}`, 502);
+    if (res.status === 404) {
+      varovani = `DPD svoz č. ${o.pickup_order_id} nenašlo, takže zrušení nepotvrdilo. Ověřte v MojeDPD, že kurýr nepřijede.`;
+    } else if (!res.ok) {
+      throw new Chyba(`Svoz se u DPD zrušit nepodařilo – ${await textChybyDpd(res)}`, 502);
+    }
   }
   const { data } = await svc.from("ticket_shipment_dpd")
-    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_by: uid })
+    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_by: uid, ...(varovani ? { status_text: varovani } : {}) })
     .eq("id", o.id).select(SLOUPCE).single();
   await svc.from("ticket_shipments").update({ tracking_number: null }).eq("id", shipmentId);
-  return json({ ok: true, objednavka: data });
+  return json({ ok: true, objednavka: data, varovani });
 }
 
 serve(async (req) => {

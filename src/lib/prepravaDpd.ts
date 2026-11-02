@@ -133,8 +133,10 @@ export async function sledovatDpd(shipmentId: string): Promise<ObjednavkaDpd> {
   return mapObjednavka(d.objednavka);
 }
 
-export async function zrusitDpd(shipmentId: string): Promise<void> {
-  await zavolej({ action: "cancel", shipmentId });
+/** Vrací varování, když DPD zrušení svozu nepotvrdilo (svoz nenašlo); jinak null. */
+export async function zrusitDpd(shipmentId: string): Promise<string | null> {
+  const d = await zavolej<{ varovani?: string | null }>({ action: "cancel", shipmentId });
+  return d.varovani ?? null;
 }
 
 export async function stitekDpd(shipmentId: string): Promise<string> {

@@ -592,8 +592,9 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
           if (!otevrena) return;
           await akce(async () => {
             // Nejdřív DPD: když zrušení svozu selže, zásilka zůstane, jak byla.
-            if (dpdZive && jdeZrusit(dpdZive)) await zrusitDpd(otevrena.id);
+            const varovani = dpdZive && jdeZrusit(dpdZive) ? await zrusitDpd(otevrena.id) : null;
             await stornujZasilku(otevrena.id);
+            if (varovani) showToast(varovani, "error");
           }, "Zásilka stornována.");
           setZalozka("cancelled");
         }}
