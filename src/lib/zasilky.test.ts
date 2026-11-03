@@ -98,7 +98,7 @@ describe("krokyPresunu", () => {
   const z = (prepis: Partial<Zasilka> & { polozkaPrevzata?: boolean }): Zasilka => ({
     id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
     createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null, cancelledBy: null,
-    polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, receivedBy: null, note: "" }],
+    polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", addedBy: null, receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, receivedBy: null, note: "" }],
     ...prepis,
   });
   const t = (u: Partial<{ locationBranchId: string | null; transitShipmentId: string | null }> = {}) => ({ id: "t", branchId: "b", ...u });
@@ -164,7 +164,7 @@ describe("zakázka mimo pobočku", () => {
 });
 
 describe("historie zásilky", () => {
-  const polozka = (id: string, receivedAt: string | null, receivedBy: string | null) => ({ id, shipmentId: "z", ticketId: id, addedAt: "2026-09-10T10:00:00Z", receivedAt, receivedBy, note: "" });
+  const polozka = (id: string, receivedAt: string | null, receivedBy: string | null) => ({ id, shipmentId: "z", ticketId: id, addedAt: "2026-09-10T10:00:00Z", addedBy: "u1", receivedAt, receivedBy, note: "" });
   const zas = (prepis: Partial<Zasilka>): Zasilka => ({
     id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
     createdBy: "u1", createdAt: "2026-09-10T10:00:00Z", sentBy: "u2", sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null, cancelledBy: null,
@@ -172,10 +172,11 @@ describe("historie zásilky", () => {
   });
   const kod = (id: string) => `K-${id}`;
 
-  it("založení a odeslání s autory, od nejstaršího", () => {
+  it("založení, přidání zakázek a odeslání s autory, od nejstaršího", () => {
     const h = historieZasilky(zas({ polozky: [polozka("a", null, null), polozka("b", null, null)] }), kod);
     expect(h).toEqual([
       { kdy: "2026-09-10T10:00:00Z", text: "Zásilka založena", kdo: "u1" },
+      { kdy: "2026-09-10T10:00:00Z", text: "Přidáno: K-a, K-b", kdo: "u1" },
       { kdy: "2026-09-10T11:00:00Z", text: "Odeslána (2 zakázky)", kdo: "u2" },
     ]);
   });
@@ -188,15 +189,26 @@ describe("historie zásilky", () => {
       }),
       kod,
     );
-    expect(h.slice(2)).toEqual([
+    expect(h.slice(3)).toEqual([
       { kdy: "2026-09-11T08:00:00Z", text: "Převzato: K-a", kdo: "u3" },
       { kdy: "2026-09-12T09:00:00Z", text: "Převzato: K-b, K-c – zásilka kompletní", kdo: "u4" },
     ]);
   });
 
+  it("přidání v různých minutách nebo od různých lidí je zvlášť", () => {
+    const h = historieZasilky(
+      zas({ polozky: [{ ...polozka("a", null, null), addedAt: "2026-09-10T10:00:10Z" }, { ...polozka("b", null, null), addedAt: "2026-09-10T10:00:50Z" }, { ...polozka("c", null, null), addedAt: "2026-09-10T10:05:00Z", addedBy: "u9" }] }),
+      kod,
+    );
+    expect(h.filter((u) => u.text.startsWith("Přidáno"))).toEqual([
+      { kdy: "2026-09-10T10:00:10Z", text: "Přidáno: K-a, K-b", kdo: "u1" },
+      { kdy: "2026-09-10T10:05:00Z", text: "Přidáno: K-c", kdo: "u9" },
+    ]);
+  });
+
   it("dílčí převzetí bez uloženého autora ho nevymýšlí", () => {
     const h = historieZasilky(zas({ polozky: [polozka("a", "2026-09-11T08:00:00Z", null)] }), kod);
-    expect(h[2]).toEqual({ kdy: "2026-09-11T08:00:00Z", text: "Převzato: K-a", kdo: null });
+    expect(h[3]).toEqual({ kdy: "2026-09-11T08:00:00Z", text: "Převzato: K-a", kdo: null });
   });
 
   it("zásilka bez zakázek, storno a DPD", () => {

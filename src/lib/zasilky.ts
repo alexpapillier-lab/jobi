@@ -45,6 +45,8 @@ export type ZasilkaPolozka = {
   shipmentId: string;
   ticketId: string;
   addedAt: string;
+  /** Kdo zakázku do zásilky přidal; chybí u položek před 3. 11. 2026. */
+  addedBy: string | null;
   receivedAt: string | null;
   /** Kdo položku převzal; chybí u dílčích převzetí před 3. 11. 2026. */
   receivedBy: string | null;
@@ -117,13 +119,25 @@ export type UdalostZasilky = {
 export type DpdUdalosti = { createdAt: string; cancelledAt: string | null; deliveredAt: string | null };
 
 /**
- * Historie zásilky od nejstaršího po nejnovější: založení, odeslání, každá
+ * Historie zásilky od nejstaršího po nejnovější: založení, přidání zakázek, odeslání, každá
  * dávka převzetí (zakázky mohou dorazit postupně), storno a přeprava DPD.
  * Skládá se z toho, co už zásilka nese, nic navíc se neukládá.
  */
 export function historieZasilky(z: Zasilka, kodZakazky: (ticketId: string) => string | null | undefined, dpd?: DpdUdalosti | null): UdalostZasilky[] {
   const out: UdalostZasilky[] = [];
   if (z.createdAt) out.push({ kdy: z.createdAt, text: "Zásilka založena", kdo: z.createdBy });
+  // Přidání zakázek: dávky stejného člověka v rámci jedné minuty („Přidat vše“
+  // vkládá po jedné). Odebrání z konceptu se nezaznamenává.
+  const pridani = new Map<string, { kdy: string; kdo: string | null; kody: string[] }>();
+  for (const p of z.polozky) {
+    if (!p.addedAt) continue;
+    const klic = `${p.addedAt.slice(0, 16)}|${p.addedBy ?? ""}`;
+    const d = pridani.get(klic) ?? { kdy: p.addedAt, kdo: p.addedBy, kody: [] };
+    if (p.addedAt < d.kdy) d.kdy = p.addedAt;
+    d.kody.push(kodZakazky(p.ticketId) || "zakázka");
+    pridani.set(klic, d);
+  }
+  for (const d of pridani.values()) out.push({ kdy: d.kdy, text: `Přidáno: ${d.kody.join(", ")}`, kdo: d.kdo });
   if (z.sentAt) {
     const n = z.polozky.length;
     out.push({ kdy: z.sentAt, text: n > 0 ? `Odeslána (${n} ${n === 1 ? "zakázka" : n >= 2 && n <= 4 ? "zakázky" : "zakázek"})` : "Odeslána bez zakázek", kdo: z.sentBy });
@@ -165,6 +179,7 @@ function mapPolozka(r: Record<string, unknown>): ZasilkaPolozka {
     shipmentId: str(r.shipment_id),
     ticketId: str(r.ticket_id),
     addedAt: str(r.added_at),
+    addedBy: typeof r.added_by === "string" ? r.added_by : null,
     receivedAt: typeof r.received_at === "string" ? r.received_at : null,
     receivedBy: typeof r.received_by === "string" ? r.received_by : null,
     note: str(r.note),
@@ -196,7 +211,7 @@ export function mapZasilka(r: Record<string, unknown>): Zasilka {
   };
 }
 
-const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, cancelled_at, cancelled_by, ticket_shipment_items(id, shipment_id, ticket_id, added_at, received_at, received_by, note)";
+const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, cancelled_at, cancelled_by, ticket_shipment_items(id, shipment_id, ticket_id, added_at, added_by, received_at, received_by, note)";
 
 export async function nactiZasilky(serviceId: string): Promise<Zasilka[]> {
   if (!supabase) return [];
