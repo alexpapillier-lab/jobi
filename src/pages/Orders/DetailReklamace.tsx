@@ -309,8 +309,25 @@ export function DetailReklamace({
                           setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, price: num } : x)));
                         }}
                         placeholder="0 = zdarma"
-                        title="Při uznané reklamaci 0 Kč, při neuznané uvedte cenu opravy"
+                        title="Cena pro zákazníka: při uznané reklamaci 0 Kč, při neuznané uveďte cenu opravy"
                         style={{ ...baseFieldInput, width: 100, fontWeight: 700 }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Náklad (Kč)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={item.cost ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const num = v === "" ? undefined : Number(v);
+                          setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, cost: num } : x)));
+                        }}
+                        placeholder="díly, práce"
+                        title="Interní náklad servisu na zákrok (díly, práce) – nezobrazuje se na dokladech ani zákazníkovi"
+                        style={{ ...baseFieldInput, width: 100 }}
+                        data-zakrok-naklad
                       />
                     </div>
                     <button
@@ -367,11 +384,17 @@ export function DetailReklamace({
             </div>
             {resolutionItems.length > 0 && (() => {
               const total = resolutionItems.reduce((sum, r) => sum + (r.price || 0), 0);
+              const naklad = resolutionItems.reduce((sum, r) => sum + (r.cost || 0), 0);
               return (
                 <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)", fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
                   Celkem: {total.toLocaleString("cs-CZ")} Kč
                   {total === 0 && resolutionItems.some((r) => r.price === 0 || r.price === undefined) && (
                     <span style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginLeft: 8 }}>(vše zdarma)</span>
+                  )}
+                  {naklad > 0 && (
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginTop: 4 }} data-zakroky-naklad-celkem>
+                      Náklad servisu: {naklad.toLocaleString("cs-CZ")} Kč (interní, na doklad nejde)
+                    </div>
                   )}
                 </div>
               );
