@@ -38,7 +38,7 @@ serve(async (req) => {
       const text = await req.text();
       if (!text || text.trim() === "") {
         return new Response(
-          JSON.stringify({ error: "Empty request body" }),
+          JSON.stringify({ error: "Požadavek je prázdný.", code: "bad_request" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -48,7 +48,7 @@ serve(async (req) => {
     } catch (e) {
       console.error("[invite-accept] invalid json", e);
       return new Response(
-        JSON.stringify({ error: "Invalid JSON body", detail: e instanceof Error ? e.message : String(e) }),
+        JSON.stringify({ error: "Požadavek má neplatný tvar.", code: "bad_request" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -57,7 +57,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: "Missing Authorization header" }),
+        JSON.stringify({ error: "Nejste přihlášeni. Přihlaste se a zkuste to znovu.", code: "unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -75,7 +75,7 @@ serve(async (req) => {
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user) {
       return new Response(
-        JSON.stringify({ error: "Unauthorized", detail: userErr?.message }),
+        JSON.stringify({ error: "Přihlášení vypršelo. Přihlaste se znovu.", code: "unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -86,7 +86,7 @@ serve(async (req) => {
     const { token } = body;
     if (!token || typeof token !== "string") {
       return new Response(
-        JSON.stringify({ error: "Missing or invalid token" }),
+        JSON.stringify({ error: "Chybí kód pozvánky.", code: "bad_request" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -104,14 +104,14 @@ serve(async (req) => {
     if (inviteErr) {
       console.error("[invite-accept] Error finding invite:", inviteErr);
       return new Response(
-        JSON.stringify({ error: `Failed to find invite: ${inviteErr.message}` }),
+        JSON.stringify({ error: "Pozvánku se nepodařilo ověřit. Zkuste to prosím znovu.", code: "server_error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     if (!invite) {
       return new Response(
-        JSON.stringify({ error: "Invite not found" }),
+        JSON.stringify({ error: "Pozvánka nenalezena. Zkontrolujte kód, nebo požádejte o novou.", code: "invite_not_found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -119,7 +119,7 @@ serve(async (req) => {
     // Check if invite is already accepted
     if (invite.accepted_at) {
       return new Response(
-        JSON.stringify({ error: "Invite already accepted" }),
+        JSON.stringify({ error: "Pozvánka už byla využita.", code: "invite_used" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -127,7 +127,7 @@ serve(async (req) => {
     // Check if invite is expired
     if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
       return new Response(
-        JSON.stringify({ error: "Invite has expired" }),
+        JSON.stringify({ error: "Pozvánce vypršela platnost. Požádejte o novou.", code: "invite_expired" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -137,7 +137,7 @@ serve(async (req) => {
     if (invite.email && invite.email.trim() !== "" && invite.email.toLowerCase() !== userEmail) {
       console.log("[invite-accept] Email mismatch", { inviteEmail: invite.email, userEmail });
       return new Response(
-        JSON.stringify({ error: "Email does not match invite" }),
+        JSON.stringify({ error: "Pozvánka je určená pro jiný e-mail, než se kterým jste přihlášeni. Přihlaste se e-mailem, na který pozvánka přišla.", code: "email_mismatch" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -153,7 +153,7 @@ serve(async (req) => {
     if (existingErr) {
       console.error("[invite-accept] Error checking existing membership:", existingErr);
       return new Response(
-        JSON.stringify({ error: `Failed to check membership: ${existingErr.message}` }),
+        JSON.stringify({ error: "Pozvánku se nepodařilo přijmout. Zkuste to prosím znovu.", code: "server_error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -213,11 +213,7 @@ serve(async (req) => {
         hint: membershipErr.hint
       });
       return new Response(
-        JSON.stringify({ 
-          error: `Failed to create membership: ${membershipErr.message}`,
-          code: membershipErr.code,
-          details: membershipErr.details
-        }),
+        JSON.stringify({ error: "Členství se nepodařilo vytvořit. Zkuste to prosím znovu.", code: "server_error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -263,7 +259,7 @@ serve(async (req) => {
        a vnitřní strukturu, a tuhle funkci volá kdokoli s odkazem z pozvánky.
        Podrobnosti zůstávají v logu funkce. */
     return new Response(
-      JSON.stringify({ error: "Pozvánku se nepodařilo přijmout. Zkuste to prosím znovu." }),
+      JSON.stringify({ error: "Pozvánku se nepodařilo přijmout. Zkuste to prosím znovu.", code: "server_error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

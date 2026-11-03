@@ -33,14 +33,14 @@ serve(async (req) => {
     const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
     if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
+        JSON.stringify({ error: "Nejste přihlášeni. Přihlaste se a zkuste to znovu." }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
     if (!token) {
       return new Response(
-        JSON.stringify({ error: "Invalid authorization header format" }),
+        JSON.stringify({ error: "Nejste přihlášeni. Přihlaste se a zkuste to znovu." }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -54,7 +54,7 @@ serve(async (req) => {
     const { data: userRes, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userRes?.user) {
       return new Response(
-        JSON.stringify({ error: "Unauthorized", detail: userErr?.message }),
+        JSON.stringify({ error: "Přihlášení vypršelo. Přihlaste se znovu." }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -69,7 +69,7 @@ serve(async (req) => {
     const modeNorm = (mode || "current").trim().toLowerCase();
     if (modeNorm !== "current" && modeNorm !== "stock") {
       return new Response(
-        JSON.stringify({ error: "Invalid mode. Must be 'current' or 'stock'" }),
+        JSON.stringify({ error: "Neplatný požadavek na pozvánku." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -77,13 +77,13 @@ serve(async (req) => {
     if (modeNorm === "current") {
       if (!serviceId) {
         return new Response(
-          JSON.stringify({ error: "Missing required field: serviceId (required for mode='current')" }),
+          JSON.stringify({ error: "Chybí servis, do kterého se má pozvat." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (!email || !role) {
         return new Response(
-          JSON.stringify({ error: "Missing required fields: email, role" }),
+          JSON.stringify({ error: "Zadejte e-mail a roli." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -92,7 +92,7 @@ serve(async (req) => {
       const hasEmail = emailTrim.length > 0;
       if (hasEmail && !role) {
         return new Response(
-          JSON.stringify({ error: "Missing required field: role (required when email is provided)" }),
+          JSON.stringify({ error: "Zadejte roli pozvaného." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -103,7 +103,7 @@ serve(async (req) => {
       roleNorm = role.trim().toLowerCase();
       if (!["owner", "admin", "member"].includes(roleNorm)) {
         return new Response(
-          JSON.stringify({ error: "Invalid role. Must be owner, admin, or member" }),
+          JSON.stringify({ error: "Neplatná role. Povolené jsou majitel, správce a člen." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -133,8 +133,9 @@ serve(async (req) => {
         .single();
 
       if (serviceError || !newService) {
+        console.error("[invite_create] service insert failed", serviceError);
         return new Response(
-          JSON.stringify({ error: `Failed to create service: ${serviceError?.message || "Unknown error"}` }),
+          JSON.stringify({ error: "Servis se nepodařilo vytvořit. Zkuste to prosím znovu." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -149,8 +150,9 @@ serve(async (req) => {
           { onConflict: "service_id,user_id" }
         );
       if (membershipError) {
+        console.error("[invite_create] membership insert failed", membershipError);
         return new Response(
-          JSON.stringify({ error: `Failed to create membership: ${membershipError.message}` }),
+          JSON.stringify({ error: "Členství se nepodařilo vytvořit. Zkuste to prosím znovu." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -164,7 +166,7 @@ serve(async (req) => {
     } else {
       if (!serviceId) {
         return new Response(
-          JSON.stringify({ error: "Missing required field: serviceId (required for mode='current')" }),
+          JSON.stringify({ error: "Chybí servis, do kterého se má pozvat." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -182,13 +184,13 @@ serve(async (req) => {
 
         if (membershipError || !membership) {
           return new Response(
-            JSON.stringify({ error: "User is not a member of this service" }),
+            JSON.stringify({ error: "Nejste členem tohoto servisu." }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         if (membership.role !== "owner" && membership.role !== "admin") {
           return new Response(
-            JSON.stringify({ error: "User must be owner or admin to create invites" }),
+            JSON.stringify({ error: "Zvát nové členy může jen majitel nebo správce servisu." }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -198,7 +200,7 @@ serve(async (req) => {
         // owner na vlastní druhý e-mail a obešel tím zákaz povyšování.
         if (roleNorm === "owner" && membership.role !== "owner") {
           return new Response(
-            JSON.stringify({ error: "Only owner can assign owner role" }),
+            JSON.stringify({ error: "Roli majitele může přidělit jen majitel." }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -269,10 +271,11 @@ serve(async (req) => {
       .single();
 
     if (inviteError) {
+      console.error("[invite_create] invite insert failed", inviteError);
       // check_violation = trigger na limit členů (souběh dvou pozvánek naráz).
       const limitem = (inviteError as { code?: string }).code === "23514";
       return new Response(
-        JSON.stringify(limitem ? { error: inviteError.message, code: "members_limit" } : { error: `Failed to create invite: ${inviteError.message}` }),
+        JSON.stringify(limitem ? { error: inviteError.message, code: "members_limit" } : { error: "Pozvánku se nepodařilo vytvořit. Zkuste to prosím znovu." }),
         { status: limitem ? 409 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

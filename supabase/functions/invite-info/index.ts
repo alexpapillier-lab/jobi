@@ -18,7 +18,7 @@ serve(async (req) => {
 
   if (req.method !== "POST") {
     return new Response(
-      JSON.stringify({ error: "Method not allowed" }),
+      JSON.stringify({ error: "Nepodporovaný požadavek." }),
       { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -28,7 +28,7 @@ serve(async (req) => {
     const token = typeof body?.token === "string" ? body.token.trim() : "";
     if (!token) {
       return new Response(
-        JSON.stringify({ error: "Missing token" }),
+        JSON.stringify({ error: "Chybí kód pozvánky." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -45,7 +45,7 @@ serve(async (req) => {
 
     if (inviteErr) {
       return new Response(
-        JSON.stringify({ error: "Failed to lookup invite" }),
+        JSON.stringify({ error: "Pozvánku se nepodařilo načíst. Zkuste to prosím znovu." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -87,8 +87,9 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
+    console.error("[invite-info] exception", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }),
+      JSON.stringify({ error: "Pozvánku se nepodařilo načíst. Zkuste to prosím znovu." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

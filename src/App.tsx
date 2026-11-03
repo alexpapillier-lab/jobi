@@ -52,6 +52,7 @@ import { supabase } from "./lib/supabaseClient";
 import { startServicePresence } from "./lib/presence";
 import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "./lib/zvyrazneniStavu";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
+import { kodChybyFunkce, textChybyFunkce } from "./lib/edgeFunctionError";
 import { showToast, showPersistentToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
@@ -1106,22 +1107,23 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             } catch {}
           }
           console.error("[App] invite-accept error (attempt " + (attempt + 1) + ")", { error, detail });
-          const rawErr = `${error?.message || ""} ${detail || ""}`.toLowerCase();
-          const looksLikeInvalidInvite =
-            /(invite|pozv|token)/.test(rawErr) &&
-            /(invalid|neplat|not found|nenalez|expired|vypr|id)/.test(rawErr);
-          if (looksLikeInvalidInvite) {
+          // Server posílá stabilní kód a českou větu; opakovat má smysl jen u chyb,
+          // které se můžou samy spravit (síť, server), ne u neplatné pozvánky.
+          const kod = await kodChybyFunkce(error);
+          const text = await textChybyFunkce(error, "Pozvánku se nepodařilo přijmout.");
+          const koncova = kod === "invite_not_found" || kod === "invite_used" || kod === "invite_expired" || kod === "email_mismatch";
+          if (koncova) {
             clearPendingInviteToken();
             inviteResolvedTokenRef.current = token;
             inviteResolvingTokenRef.current = null;
-            showToast("Pozvánka už není platná. Starý kód byl odstraněn.", "error");
+            showToast(text, "error");
             return;
           }
           if (attempt < MAX_RETRIES - 1) {
             await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
             return handleInvite(attempt + 1);
           }
-          showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
+          showToast(text, "error");
           inviteResolvingTokenRef.current = null;
           return;
         }

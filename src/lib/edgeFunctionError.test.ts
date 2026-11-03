@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { textChybyFunkce } from "./edgeFunctionError";
+import { kodChybyFunkce, textChybyFunkce } from "./edgeFunctionError";
 
 const FN_CHYBA = "Edge Function returned a non-2xx status code";
 
@@ -37,5 +37,17 @@ describe("textChybyFunkce", () => {
   it("nikdy nevrátí větu o non-2xx", async () => {
     expect(await textChybyFunkce(new Error(FN_CHYBA), "výchozí")).toBe("výchozí");
     expect(await textChybyFunkce(undefined, "výchozí")).toBe("výchozí");
+  });
+});
+
+describe("kodChybyFunkce", () => {
+  it("vrátí kód z těla odpovědi", async () => {
+    expect(await kodChybyFunkce(httpChyba(JSON.stringify({ error: "x", code: "invite_expired" }), 400))).toBe("invite_expired");
+  });
+
+  it("bez kódu nebo mimo JSON vrátí null", async () => {
+    expect(await kodChybyFunkce(httpChyba(JSON.stringify({ error: "x" })))).toBeNull();
+    expect(await kodChybyFunkce(httpChyba("<html>", 502))).toBeNull();
+    expect(await kodChybyFunkce(new Error("síť"))).toBeNull();
   });
 });

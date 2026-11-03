@@ -20,3 +20,20 @@ export async function textChybyFunkce(err: unknown, vychozi: string): Promise<st
   if (err instanceof Error && err.message && !/non-2xx/i.test(err.message)) return err.message;
   return vychozi;
 }
+
+/**
+ * Strojový kód chyby z těla odpovědi (`{"error":"…","code":"invite_expired"}`);
+ * null, když ho funkce neposlala nebo tělo není JSON.
+ */
+export async function kodChybyFunkce(err: unknown): Promise<string | null> {
+  const ctx = (err as { context?: unknown } | null)?.context;
+  if (ctx && typeof (ctx as Response).clone === "function") {
+    try {
+      const telo = await (ctx as Response).clone().json();
+      if (telo && typeof telo.code === "string" && telo.code) return telo.code;
+    } catch {
+      // tělo není JSON
+    }
+  }
+  return null;
+}
