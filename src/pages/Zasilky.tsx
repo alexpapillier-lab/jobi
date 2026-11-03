@@ -9,12 +9,14 @@ import { safeLoadCompanyData } from "../lib/companyData";
 import { useBranches } from "../context/BranchContext";
 import { useStatuses } from "../state/StatusesStore";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { StatusBadge } from "../components/tickets/StatusBadge";
 import { PrepravaDpd } from "../components/PrepravaDpd";
 import { jdeZrusit, nactiNastaveniDpd, nactiObjednavkyDpd, stavDpdText, zrusitDpd, type NastaveniDpd, type ObjednavkaDpd } from "../lib/prepravaDpd";
 import {
   cisloZasilky,
   druhaPobocka,
+  historieZasilky,
   htmlProtokolu,
   nactiZasilky,
   nepreveztePolozky,
@@ -152,6 +154,13 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   const otevrena = useMemo(() => zasilky.find((z) => z.id === otevrenaId) ?? null, [zasilky, otevrenaId]);
   const dpdOtevrene = otevrena ? objednavkyDpd.get(otevrena.id) ?? null : null;
   const dpdZive = dpdOtevrene && dpdOtevrene.status !== "cancelled" ? dpdOtevrene : null;
+
+  /* Historie zásilky: kdo a kdy ji založil, odeslal, převzal. Jména členů servisu. */
+  const { jmeno } = useClenoveServisu(activeServiceId, true);
+  const historie = useMemo(
+    () => (otevrena ? historieZasilky(otevrena, (id) => zakazky.get(id)?.code, dpdOtevrene) : []),
+    [otevrena, zakazky, dpdOtevrene],
+  );
 
   /* „Naše“ pobočka pro rozlišení příchozí / odchozí: vybraná ve filtru,
      jinak ta pro novou zakázku (domovská). */
@@ -498,6 +507,21 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                   </Button>
                 </div>
               )}
+
+              <details open={otevrena.status !== "draft"} style={{ paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
+                  Historie zásilky ({historie.length})
+                </summary>
+                <ol style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 6 }}>
+                  {historie.map((u, i) => (
+                    <li key={`${u.kdy}-${i}`} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
+                      <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 96, whiteSpace: "nowrap" }}>{datum(u.kdy)}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>{u.text}</span>
+                      {u.kdo && <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{jmeno(u.kdo) ?? "člen týmu"}</span>}
+                    </li>
+                  ))}
+                </ol>
+              </details>
 
               {otevrena.status === "draft" && (
                 <div data-tour="zasilky-pridat-zakazky" style={{ display: "grid", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>

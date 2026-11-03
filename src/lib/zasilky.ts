@@ -36,6 +36,7 @@ export type Zasilka = {
   receivedAt: string | null;
   /** Stornovaná zásilka (na cestě zrušená, zakázky se vrátily). */
   cancelledAt: string | null;
+  cancelledBy: string | null;
   polozky: ZasilkaPolozka[];
 };
 
@@ -45,6 +46,8 @@ export type ZasilkaPolozka = {
   ticketId: string;
   addedAt: string;
   receivedAt: string | null;
+  /** Kdo položku převzal; chybí u dílčích převzetí před 3. 11. 2026. */
+  receivedBy: string | null;
   note: string;
 };
 
@@ -103,6 +106,52 @@ export function cisloZasilky(z: Pick<Zasilka, "cislo">): string {
   return `Z-${String(z.cislo).padStart(4, "0")}`;
 }
 
+export type UdalostZasilky = {
+  kdy: string;
+  text: string;
+  /** Id uživatele, který to udělal; null = neznámo (starší data, DPD). */
+  kdo: string | null;
+};
+
+/** Co do historie přidává přeprava DPD (bez autora, ten se u ní neukládá). */
+export type DpdUdalosti = { createdAt: string; cancelledAt: string | null; deliveredAt: string | null };
+
+/**
+ * Historie zásilky od nejstaršího po nejnovější: založení, odeslání, každá
+ * dávka převzetí (zakázky mohou dorazit postupně), storno a přeprava DPD.
+ * Skládá se z toho, co už zásilka nese, nic navíc se neukládá.
+ */
+export function historieZasilky(z: Zasilka, kodZakazky: (ticketId: string) => string | null | undefined, dpd?: DpdUdalosti | null): UdalostZasilky[] {
+  const out: UdalostZasilky[] = [];
+  if (z.createdAt) out.push({ kdy: z.createdAt, text: "Zásilka založena", kdo: z.createdBy });
+  if (z.sentAt) {
+    const n = z.polozky.length;
+    out.push({ kdy: z.sentAt, text: n > 0 ? `Odeslána (${n} ${n === 1 ? "zakázka" : n >= 2 && n <= 4 ? "zakázky" : "zakázek"})` : "Odeslána bez zakázek", kdo: z.sentBy });
+  }
+  if (dpd?.createdAt) out.push({ kdy: dpd.createdAt, text: "Přeprava DPD objednána", kdo: null });
+
+  // Dávky převzetí: položky převzaté ve stejný okamžik stejným člověkem.
+  const davky = new Map<string, { kdy: string; kdo: string | null; kody: string[] }>();
+  for (const p of z.polozky) {
+    if (!p.receivedAt) continue;
+    const klic = `${p.receivedAt}|${p.receivedBy ?? ""}`;
+    const d = davky.get(klic) ?? { kdy: p.receivedAt, kdo: p.receivedBy, kody: [] };
+    d.kody.push(kodZakazky(p.ticketId) || "zakázka");
+    davky.set(klic, d);
+  }
+  for (const d of davky.values()) {
+    const posledni = z.status === "received" && z.receivedAt === d.kdy;
+    out.push({ kdy: d.kdy, text: `Převzato: ${d.kody.join(", ")}${posledni ? " – zásilka kompletní" : ""}`, kdo: d.kdo ?? (posledni ? z.receivedBy : null) });
+  }
+  // Zásilka bez zakázek se přebírá jedním potvrzením.
+  if (z.status === "received" && z.receivedAt && z.polozky.length === 0) out.push({ kdy: z.receivedAt, text: "Zásilka převzata", kdo: z.receivedBy });
+
+  if (z.cancelledAt) out.push({ kdy: z.cancelledAt, text: "Zásilka stornována", kdo: z.cancelledBy });
+  if (dpd?.deliveredAt) out.push({ kdy: dpd.deliveredAt, text: "DPD: balík doručen", kdo: null });
+  if (dpd?.cancelledAt) out.push({ kdy: dpd.cancelledAt, text: "Přeprava DPD zrušena", kdo: null });
+  return out.sort((a, b) => a.kdy.localeCompare(b.kdy));
+}
+
 /** Kolik položek zásilky chybí (odeslána, ale nepřevzatá). */
 export function nepreveztePolozky(z: Zasilka): ZasilkaPolozka[] {
   return z.status === "draft" || z.status === "cancelled" ? [] : z.polozky.filter((p) => !p.receivedAt);
@@ -117,6 +166,7 @@ function mapPolozka(r: Record<string, unknown>): ZasilkaPolozka {
     ticketId: str(r.ticket_id),
     addedAt: str(r.added_at),
     receivedAt: typeof r.received_at === "string" ? r.received_at : null,
+    receivedBy: typeof r.received_by === "string" ? r.received_by : null,
     note: str(r.note),
   };
 }
@@ -141,11 +191,12 @@ export function mapZasilka(r: Record<string, unknown>): Zasilka {
     receivedBy: typeof r.received_by === "string" ? r.received_by : null,
     receivedAt: typeof r.received_at === "string" ? r.received_at : null,
     cancelledAt: typeof r.cancelled_at === "string" ? r.cancelled_at : null,
+    cancelledBy: typeof r.cancelled_by === "string" ? r.cancelled_by : null,
     polozky,
   };
 }
 
-const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, cancelled_at, ticket_shipment_items(id, shipment_id, ticket_id, added_at, received_at, note)";
+const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, cancelled_at, cancelled_by, ticket_shipment_items(id, shipment_id, ticket_id, added_at, received_at, received_by, note)";
 
 export async function nactiZasilky(serviceId: string): Promise<Zasilka[]> {
   if (!supabase) return [];

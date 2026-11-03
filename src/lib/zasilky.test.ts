@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisloZasilky, druhaPobocka, stavZasilkyText, htmlProtokolu, jeMimoPobocku, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
+import { cisloZasilky, druhaPobocka, stavZasilkyText, historieZasilky, htmlProtokolu, jeMimoPobocku, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
 
 const nazev = (id: string) => ({ b: "Brno", p: "Praha" }[id] ?? id);
 
@@ -97,8 +97,8 @@ describe("dniBezZmenyJinde", () => {
 describe("krokyPresunu", () => {
   const z = (prepis: Partial<Zasilka> & { polozkaPrevzata?: boolean }): Zasilka => ({
     id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
-    createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null,
-    polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, note: "" }],
+    createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null, cancelledBy: null,
+    polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, receivedBy: null, note: "" }],
     ...prepis,
   });
   const t = (u: Partial<{ locationBranchId: string | null; transitShipmentId: string | null }> = {}) => ({ id: "t", branchId: "b", ...u });
@@ -160,5 +160,53 @@ describe("zakázka mimo pobočku", () => {
   it("bez aktivní pobočky nebo bez pobočky zakázky se nic neskrývá", () => {
     expect(jeMimoPobocku({ branchId: "b", transitShipmentId: "z" }, null)).toBe(false);
     expect(jeMimoPobocku({ transitShipmentId: "z" }, "b")).toBe(false);
+  });
+});
+
+describe("historie zásilky", () => {
+  const polozka = (id: string, receivedAt: string | null, receivedBy: string | null) => ({ id, shipmentId: "z", ticketId: id, addedAt: "2026-09-10T10:00:00Z", receivedAt, receivedBy, note: "" });
+  const zas = (prepis: Partial<Zasilka>): Zasilka => ({
+    id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
+    createdBy: "u1", createdAt: "2026-09-10T10:00:00Z", sentBy: "u2", sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null, cancelledBy: null,
+    polozky: [], ...prepis,
+  });
+  const kod = (id: string) => `K-${id}`;
+
+  it("založení a odeslání s autory, od nejstaršího", () => {
+    const h = historieZasilky(zas({ polozky: [polozka("a", null, null), polozka("b", null, null)] }), kod);
+    expect(h).toEqual([
+      { kdy: "2026-09-10T10:00:00Z", text: "Zásilka založena", kdo: "u1" },
+      { kdy: "2026-09-10T11:00:00Z", text: "Odeslána (2 zakázky)", kdo: "u2" },
+    ]);
+  });
+
+  it("převzetí po dávkách; poslední dávka označí zásilku za kompletní", () => {
+    const h = historieZasilky(
+      zas({
+        status: "received", receivedAt: "2026-09-12T09:00:00Z", receivedBy: "u4",
+        polozky: [polozka("a", "2026-09-11T08:00:00Z", "u3"), polozka("b", "2026-09-12T09:00:00Z", "u4"), polozka("c", "2026-09-12T09:00:00Z", "u4")],
+      }),
+      kod,
+    );
+    expect(h.slice(2)).toEqual([
+      { kdy: "2026-09-11T08:00:00Z", text: "Převzato: K-a", kdo: "u3" },
+      { kdy: "2026-09-12T09:00:00Z", text: "Převzato: K-b, K-c – zásilka kompletní", kdo: "u4" },
+    ]);
+  });
+
+  it("dílčí převzetí bez uloženého autora ho nevymýšlí", () => {
+    const h = historieZasilky(zas({ polozky: [polozka("a", "2026-09-11T08:00:00Z", null)] }), kod);
+    expect(h[2]).toEqual({ kdy: "2026-09-11T08:00:00Z", text: "Převzato: K-a", kdo: null });
+  });
+
+  it("zásilka bez zakázek, storno a DPD", () => {
+    const h = historieZasilky(
+      zas({ status: "received", receivedAt: "2026-09-11T08:00:00Z", receivedBy: "u4" }),
+      kod,
+      { createdAt: "2026-09-10T11:30:00Z", cancelledAt: null, deliveredAt: "2026-09-11T07:00:00Z" },
+    );
+    expect(h.map((u) => u.text)).toEqual(["Zásilka založena", "Odeslána bez zakázek", "Přeprava DPD objednána", "DPD: balík doručen", "Zásilka převzata"]);
+    const s = historieZasilky(zas({ status: "cancelled", cancelledAt: "2026-09-10T12:00:00Z", cancelledBy: "u5" }), kod);
+    expect(s[s.length - 1]).toEqual({ kdy: "2026-09-10T12:00:00Z", text: "Zásilka stornována", kdo: "u5" });
   });
 });
