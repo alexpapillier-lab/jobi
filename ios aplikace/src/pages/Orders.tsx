@@ -212,7 +212,7 @@ const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
 const COMMENTS_STORAGE_KEY = "jobsheet_ticket_comments_v1";
 
 /** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
-type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
+type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number; cost?: number };
 
 function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
   if (!raw || !raw.trim()) return [];
@@ -226,6 +226,8 @@ function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
         name: (x as any).name ?? "",
         description: (x as any).description ?? undefined,
         price: typeof (x as any).price === "number" ? (x as any).price : undefined,
+        // Náklad servisu zapisuje desktop; tady se jen nese dál, aby se úpravou zákroků neztratil.
+        cost: typeof (x as any).cost === "number" ? (x as any).cost : undefined,
       }));
     } catch {
       return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
