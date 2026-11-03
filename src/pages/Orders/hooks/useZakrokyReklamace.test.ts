@@ -43,4 +43,9 @@ describe("zákroky reklamace → databáze → výdejka", () => {
       ["Baterie", 800],
     ]);
   });
+
+  it("náklad zákroku se uloží a načte zpět vedle ceny pro zákazníka", () => {
+    const sloupec = zakrokyDoSloupce([{ id: "a", name: "Nový cyklon", price: 0, cost: 650 }]);
+    expect(parseClaimResolutionItems(sloupec)).toEqual([{ id: "a", name: "Nový cyklon", price: 0, cost: 650 }]);
+  });
 });

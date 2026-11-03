@@ -215,6 +215,12 @@ describe("příjemka a výdejka reklamace", () => {
     expect(d.note).toBeUndefined();
   });
 
+  it("interní náklad zákroku se na doklad reklamace nedostane", () => {
+    const d = claimDocumentData(reklamace({ resolution_summary: JSON.stringify([{ id: "a", name: "Nový cyklon", price: 0, cost: 650 }]) }), firma());
+    expect(d.items).toEqual([{ name: "Nový cyklon", qty: 1, unit: "ks", unitPrice: 0, total: 0 }]);
+    expect(JSON.stringify(d)).not.toContain("650");
+  });
+
   it("psaný závěr reklamace se vytiskne jako poznámka, ne jako položka", () => {
     const d = claimDocumentData(reklamace({ resolution_summary: "Reklamace uznána, displej vyměněn." }), firma());
     expect(d.items).toEqual([]);

@@ -57,7 +57,27 @@ function ticketToData(row: Rec, service: Party): DocumentData {
   };
 }
 
+/**
+ * Zákroky reklamace z resolution_summary (JSON pole) jako řádky dokladu – jen
+ * název a cena pro zákazníka. Interní náklad (cost) na doklad nejde; dřív se
+ * pole tisklo celé jako poznámka. Psaný závěr zůstává poznámkou.
+ */
+function claimItems(raw: unknown): LineItem[] | undefined {
+  const t = s(raw);
+  if (!t?.startsWith("[")) return undefined;
+  try {
+    const arr = JSON.parse(t) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x): x is Rec => !!x && typeof x === "object" && !!s((x as Rec).name))
+      .map((x) => ({ name: String(s(x.name)), qty: 1, unit: "ks", unitPrice: n(x.price), total: n(x.price) }));
+  } catch {
+    return [];
+  }
+}
+
 function claimToData(row: Rec, service: Party): DocumentData {
+  const items = claimItems(row.resolution_summary);
   return {
     number: s(row.code),
     service,
@@ -69,7 +89,8 @@ function claimToData(row: Rec, service: Party): DocumentData {
     },
     device: { name: s(row.device_label), serial: s(row.device_serial), imei: s(row.device_imei), condition: s(row.device_condition), issue: s(row.notes) },
     dates: { received: s(row.received_at) ?? s(row.created_at), released: s(row.released_at), completed: s(row.completed_at) },
-    note: s(row.resolution_summary),
+    items: items ?? [],
+    note: items ? undefined : s(row.resolution_summary),
     totals: { currency: "CZK" },
   };
 }

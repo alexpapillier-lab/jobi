@@ -4,7 +4,15 @@
  */
 
 /** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
-export type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
+export type ClaimResolutionItem = {
+  id: string;
+  name: string;
+  description?: string;
+  /** Cena pro zákazníka (0 = zdarma při uznané reklamaci); jde na doklad. */
+  price?: number;
+  /** Interní náklad servisu na zákrok (díly, práce); na doklad ani zákazníkovi nejde. */
+  cost?: number;
+};
 
 export function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
   if (!raw || !raw.trim()) return [];
@@ -18,6 +26,7 @@ export function parseClaimResolutionItems(raw: string | null): ClaimResolutionIt
         name: (x as any).name ?? "",
         description: (x as any).description ?? undefined,
         price: typeof (x as any).price === "number" ? (x as any).price : undefined,
+        cost: typeof (x as any).cost === "number" ? (x as any).cost : undefined,
       }));
     } catch {
       return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
