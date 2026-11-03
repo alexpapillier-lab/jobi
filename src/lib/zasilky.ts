@@ -115,8 +115,8 @@ export type UdalostZasilky = {
   kdo: string | null;
 };
 
-/** Co do historie přidává přeprava DPD (bez autora, ten se u ní neukládá). */
-export type DpdUdalosti = { createdAt: string; cancelledAt: string | null; deliveredAt: string | null };
+/** Co do historie přidává přeprava DPD; autor je u starých záznamů null. */
+export type DpdUdalosti = { createdAt: string; createdBy?: string | null; cancelledAt: string | null; cancelledBy?: string | null; deliveredAt: string | null };
 
 /**
  * Historie zásilky od nejstaršího po nejnovější: založení, přidání zakázek, odeslání, každá
@@ -142,7 +142,7 @@ export function historieZasilky(z: Zasilka, kodZakazky: (ticketId: string) => st
     const n = z.polozky.length;
     out.push({ kdy: z.sentAt, text: n > 0 ? `Odeslána (${n} ${n === 1 ? "zakázka" : n >= 2 && n <= 4 ? "zakázky" : "zakázek"})` : "Odeslána bez zakázek", kdo: z.sentBy });
   }
-  if (dpd?.createdAt) out.push({ kdy: dpd.createdAt, text: "Přeprava DPD objednána", kdo: null });
+  if (dpd?.createdAt) out.push({ kdy: dpd.createdAt, text: "Přeprava DPD objednána", kdo: dpd.createdBy ?? null });
 
   // Dávky převzetí: položky převzaté ve stejný okamžik stejným člověkem.
   const davky = new Map<string, { kdy: string; kdo: string | null; kody: string[] }>();
@@ -162,7 +162,22 @@ export function historieZasilky(z: Zasilka, kodZakazky: (ticketId: string) => st
 
   if (z.cancelledAt) out.push({ kdy: z.cancelledAt, text: "Zásilka stornována", kdo: z.cancelledBy });
   if (dpd?.deliveredAt) out.push({ kdy: dpd.deliveredAt, text: "DPD: balík doručen", kdo: null });
-  if (dpd?.cancelledAt) out.push({ kdy: dpd.cancelledAt, text: "Přeprava DPD zrušena", kdo: null });
+  if (dpd?.cancelledAt) out.push({ kdy: dpd.cancelledAt, text: "Přeprava DPD zrušena", kdo: dpd.cancelledBy ?? null });
+  return out.sort((a, b) => a.kdy.localeCompare(b.kdy));
+}
+
+/**
+ * Co se stalo s jednou zakázkou v zásilce: přidání, odeslání, převzetí
+ * (u dílčího převzetí autor té dávky) a storno. Pro kartu „Kde je zakázka“.
+ */
+export function pohybZakazkyVZasilce(z: Zasilka, ticketId: string): UdalostZasilky[] {
+  const p = z.polozky.find((x) => x.ticketId === ticketId);
+  if (!p) return [];
+  const out: UdalostZasilky[] = [];
+  if (p.addedAt) out.push({ kdy: p.addedAt, text: "Přidána do zásilky", kdo: p.addedBy });
+  if (z.sentAt) out.push({ kdy: z.sentAt, text: "Odeslána", kdo: z.sentBy });
+  if (p.receivedAt) out.push({ kdy: p.receivedAt, text: "Převzata", kdo: p.receivedBy ?? (z.receivedAt === p.receivedAt ? z.receivedBy : null) });
+  if (z.cancelledAt) out.push({ kdy: z.cancelledAt, text: "Zásilka stornována", kdo: z.cancelledBy });
   return out.sort((a, b) => a.kdy.localeCompare(b.kdy));
 }
 

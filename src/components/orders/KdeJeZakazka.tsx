@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../Toast";
 import { reportError } from "../../lib/reportError";
+import { useClenoveServisu } from "../../hooks/useClenoveServisu";
 import {
   cisloZasilky,
   druhaPobocka,
   nactiZasilky,
   otevrenyKoncept,
+  pohybZakazkyVZasilce,
   popisUmisteni,
   pridejDoZasilky,
   subscribeZasilky,
@@ -46,6 +48,7 @@ export function KdeJeZakazka({
   const [koncepty, setKoncepty] = useState<Zasilka[]>([]);
   const [cil, setCil] = useState<string>("");
   const [zauzlovano, setZauzlovano] = useState(false);
+  const { jmeno } = useClenoveServisu(serviceId, true);
 
   const u = umisteniZakazky(ticket);
   const domaci = ticket.branchId ? nazevPobocky(ticket.branchId) : "—";
@@ -151,13 +154,20 @@ export function KdeJeZakazka({
         <div style={{ display: "grid", gap: 4, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>Zásilky</div>
           {historie.map((z) => (
-            <div key={z.id} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, flexWrap: "wrap" }}>
-              <span style={{ fontWeight: 700 }}>{cisloZasilky(z)}</span>
-              <span>{nazevPobocky(z.fromBranchId)} → {nazevPobocky(z.toBranchId)}</span>
-              <span style={muted}>
-                {z.status === "draft" ? "koncept" : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : `převzato ${datum(z.receivedAt)}`}
-                {z.trackingNumber ? ` · ${z.trackingNumber}` : ""}
-              </span>
+            <div key={z.id} style={{ display: "grid", gap: 2 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 700 }}>{cisloZasilky(z)}</span>
+                <span>{nazevPobocky(z.fromBranchId)} → {nazevPobocky(z.toBranchId)}</span>
+                <span style={muted}>
+                  {z.status === "draft" ? "koncept" : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : z.status === "cancelled" ? `stornováno ${datum(z.cancelledAt)}` : `převzato ${datum(z.receivedAt)}`}
+                  {z.trackingNumber ? ` · ${z.trackingNumber}` : ""}
+                </span>
+              </div>
+              {pohybZakazkyVZasilce(z, ticket.id).map((e, i) => (
+                <div key={`${e.kdy}-${i}`} style={{ ...muted, paddingLeft: 12 }}>
+                  {datum(e.kdy)} · {e.text}{e.kdo ? ` · ${jmeno(e.kdo) ?? "člen týmu"}` : ""}
+                </div>
+              ))}
             </div>
           ))}
         </div>

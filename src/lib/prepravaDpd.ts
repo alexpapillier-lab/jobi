@@ -27,12 +27,15 @@ export type ObjednavkaDpd = {
   deliveredAt: string | null;
   trackingAt: string | null;
   createdAt: string;
+  /** Kdo přepravu objednal / zrušil (id uživatele); null u starých záznamů. */
+  createdBy: string | null;
   cancelledAt: string | null;
+  cancelledBy: string | null;
 };
 
 export type NastaveniDpd = { serviceId: string; zapnuto: boolean; dsw: string | null; testovaci: boolean; maKlic: boolean; updatedAt: string | null };
 
-const SLOUPCE = "id, shipment_id, mode, varianta, parcels, testovaci, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, cancelled_at";
+const SLOUPCE = "id, shipment_id, mode, varianta, parcels, testovaci, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, created_by, cancelled_at, cancelled_by";
 
 function mapObjednavka(r: Record<string, any>): ObjednavkaDpd {
   return {
@@ -50,7 +53,9 @@ function mapObjednavka(r: Record<string, any>): ObjednavkaDpd {
     deliveredAt: r.delivered_at ?? null,
     trackingAt: r.tracking_at ?? null,
     createdAt: String(r.created_at),
+    createdBy: r.created_by ?? null,
     cancelledAt: r.cancelled_at ?? null,
+    cancelledBy: r.cancelled_by ?? null,
   };
 }
 
