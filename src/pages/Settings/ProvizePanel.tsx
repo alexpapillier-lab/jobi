@@ -10,6 +10,7 @@ import { seznamVyloucenych, textVyloucenych } from "../../lib/provizeVylouceneOp
 import { maNejasneOpravy, prectiCastku, rozhodnuti, type RozhodnutiProvize } from "../../lib/provizeKontrola";
 import { useAuth } from "../../auth/AuthProvider";
 import { ProvizeStatistiky } from "./ProvizeStatistiky";
+import { jeMesicPripsan, kodMesicni, nactiKurzCnb, poznamkaPrepoctu, prepocetNaKc, type KurzCnb } from "../../lib/provizeMesicni";
 
 import { textChyby } from "../../utils/errorNormalizer";
 /**
@@ -34,6 +35,9 @@ type Nastaveni = {
   vylouceny_opravy: string[] | null;
   email: string | null;
   posledni_sync_at: string | null;
+  /** Měsíční připomínka: pevná částka v cizí měně (null = vypnuto). */
+  mesicni_castka?: number | null;
+  mesicni_mena?: string;
 };
 
 type Polozka = {
@@ -115,6 +119,11 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [formFiltr, setFormFiltr] = useState("");
   const [formVylouceno, setFormVylouceno] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formMesicniCastka, setFormMesicniCastka] = useState("");
+  const [formMesicniMena, setFormMesicniMena] = useState("USD");
+  const [kurz, setKurz] = useState<KurzCnb | null>(null);
+  const [chybaKurzu, setChybaKurzu] = useState<string | null>(null);
+  const [pripisuji, setPripisuji] = useState(false);
   const [posilamMail, setPosilamMail] = useState<number | null>(null);
   const { session } = useAuth();
   const [formStatusy, setFormStatusy] = useState<string[]>([]);
@@ -148,6 +157,8 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         setFormFiltr(p.nastaveni?.filtr ?? "");
         setFormVylouceno(textVyloucenych(p.nastaveni?.vylouceny_opravy));
         setFormEmail(p.nastaveni?.email ?? "");
+        setFormMesicniCastka(p.nastaveni?.mesicni_castka ? String(p.nastaveni.mesicni_castka).replace(".", ",") : "");
+        setFormMesicniMena(p.nastaveni?.mesicni_mena ?? "USD");
         setFormStatusy(p.nastaveni?.statusy ?? ["Připraveno k převzetí", "Vydáno"]);
       } catch (e) {
         showToast(`Provize: ${e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e)}`, "error");
@@ -184,6 +195,48 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const soucetZaklad = kVyuctovani.reduce((s, p) => s + Number(p.zaklad), 0);
   const soucetProvize = kVyuctovani.reduce((s, p) => s + Number(p.provize), 0);
   const vyuctovanoCelkem = (data?.vyuctovani ?? []).reduce((s, v) => s + Number(v.soucet_provize), 0);
+
+  /* Měsíční připomínka: částka je v nastavení a tento měsíc ještě není připsaná. */
+  const pripominkaMesice = useMemo(() => {
+    const castka = Number(data?.nastaveni?.mesicni_castka) || 0;
+    if (!data || castka <= 0 || jeMesicPripsan(data.polozky, new Date())) return null;
+    return { castka, mena: data.nastaveni?.mesicni_mena ?? "USD" };
+  }, [data]);
+  const menaPripominky = pripominkaMesice?.mena ?? null;
+  useEffect(() => {
+    setKurz(null);
+    setChybaKurzu(null);
+    if (!menaPripominky || menaPripominky === "CZK") return;
+    let zruseno = false;
+    nactiKurzCnb(menaPripominky)
+      .then((k) => { if (!zruseno) setKurz(k); })
+      .catch((e) => { if (!zruseno) setChybaKurzu(e instanceof Error ? e.message : "Kurz se nepodařilo načíst."); });
+    return () => { zruseno = true; };
+  }, [menaPripominky]);
+
+  const pripsatMesicni = async () => {
+    if (!db || !serviceId || !pripominkaMesice || pripisuji) return;
+    const czk = pripominkaMesice.mena === "CZK" ? pripominkaMesice.castka : kurz ? prepocetNaKc(pripominkaMesice.castka, kurz.kurz) : null;
+    if (czk === null) return;
+    setPripisuji(true);
+    const { error } = await db.from("provize_polozky").insert({
+      service_id: serviceId,
+      zakazka_kod: kodMesicni(new Date()),
+      poradi: 0,
+      zaklad: 0,
+      sazba: null,
+      provize: czk,
+      status: "Měsíční částka",
+      poznamka: pripominkaMesice.mena === "CZK" ? "Měsíční částka" : poznamkaPrepoctu(pripominkaMesice.castka, pripominkaMesice.mena, kurz!.kurz, kurz!.platnost),
+    });
+    setPripisuji(false);
+    if (error) {
+      showToast(`Připsání selhalo: ${error.message}`, "error");
+      return;
+    }
+    showToast(`Připsáno ${kc(czk)} – půjde do dalšího vyúčtování.`, "success");
+    await nacti(serviceId, false);
+  };
   const oznaceniPodleId = useMemo(() => new Map((data?.vyuctovani ?? []).map((v) => [v.id, v.oznaceni])), [data]);
 
   const zobrazene = useMemo(() => {
@@ -210,10 +263,15 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       showToast("Vyber aspoň jeden sledovaný status.", "error");
       return;
     }
+    const mesicni = formMesicniCastka.trim() ? Number(formMesicniCastka.replace(/\s/g, "").replace(",", ".")) : null;
+    if (mesicni !== null && (!Number.isFinite(mesicni) || mesicni <= 0)) {
+      showToast("Měsíční částka musí být kladné číslo (nebo prázdná).", "error");
+      return;
+    }
     setPracuji(true);
     const { error } = await db
       .from("provize_nastaveni")
-      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, vylouceny_opravy: vylouceneOpravy.length ? vylouceneOpravy : null, email: formEmail.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
+      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, vylouceny_opravy: vylouceneOpravy.length ? vylouceneOpravy : null, email: formEmail.trim() || null, mesicni_castka: mesicni, mesicni_mena: formMesicniMena, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
     setPracuji(false);
     if (error) {
       showToast(`Uložení selhalo: ${error.message}`, "error");
@@ -430,6 +488,15 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 E-mail pro vyúčtování
                 <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder={session?.user?.email ?? "e-mail"} style={{ ...pole, width: 220 }} />
               </label>
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }} title="Pevná částka, kterou si každý měsíc připisuješ k provizím. Nahoře se pak objeví připomínka s přepočtem kurzem ČNB a tlačítkem Připsat. Prázdné = bez připomínky.">
+                Měsíčně připsat
+                <span style={{ display: "flex", gap: 6 }}>
+                  <input value={formMesicniCastka} onChange={(e) => setFormMesicniCastka(e.target.value)} placeholder="např. 15" inputMode="decimal" style={{ ...pole, width: 90 }} />
+                  <select value={formMesicniMena} onChange={(e) => setFormMesicniMena(e.target.value)} style={{ ...pole, width: 80 }} aria-label="Měna">
+                    {["USD", "EUR", "GBP", "CZK"].map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </span>
+              </label>
               <div style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
                 Sledované statusy
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", maxWidth: 520 }}>
@@ -483,6 +550,28 @@ export function ProvizePanel({ services }: { services: Service[] }) {
 
           {n && (
             <>
+              {pripominkaMesice && (
+                <div
+                  role="status"
+                  style={{ marginBottom: 16, padding: 12, borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-soft)", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
+                >
+                  <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, color: "var(--text)" }}>
+                      Připiš si {pripominkaMesice.castka.toLocaleString("cs-CZ")} {pripominkaMesice.mena} za {new Date().toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                      {pripominkaMesice.mena === "CZK"
+                        ? "Měsíční částka z nastavení."
+                        : kurz
+                          ? `≈ ${kc(prepocetNaKc(pripominkaMesice.castka, kurz.kurz))} · ${poznamkaPrepoctu(pripominkaMesice.castka, pripominkaMesice.mena, kurz.kurz, kurz.platnost)}`
+                          : chybaKurzu ?? "Načítám kurz ČNB…"}
+                    </div>
+                  </div>
+                  <button type="button" style={primarni} disabled={pripisuji || (pripominkaMesice.mena !== "CZK" && !kurz)} onClick={() => void pripsatMesicni()}>
+                    {pripisuji ? "Připisuji…" : kurz || pripominkaMesice.mena === "CZK" ? `Připsat ${kc(pripominkaMesice.mena === "CZK" ? pripominkaMesice.castka : prepocetNaKc(pripominkaMesice.castka, kurz!.kurz))}` : "Připsat"}
+                  </button>
+                </div>
+              )}
               {keKontrole.length > 0 && (
                 <div
                   role="alert"
