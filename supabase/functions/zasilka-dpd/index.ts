@@ -139,6 +139,8 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   const adresaPlatce = vyberAdresuPlatce(seznamAdres, hlavni.address_zip ?? undefined, zalohaPlatce);
   // Pobočka odeslání jako registrovaná adresa účtu → běžná zásilka Standard.
   const registrovana = registrovanaAdresa(seznamAdres, z1.address_zip);
+  // Cíl je registrovaná adresa (Brno → Praha) → zásilka jako zákaznický svoz na servis.iswap.cz.
+  const prijemceJeUcet = !!registrovanaAdresa(seznamAdres, z2.address_zip);
 
   const reference = `Z-${String(z.cislo).padStart(4, "0")}`;
   const poznamka = typeof body.note === "string" ? body.note : (z.note ?? "");
@@ -148,7 +150,7 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   for (const v of variantyZasilky(rezim, !!registrovana)) {
     const sRes = await dpdFetch(dpd, "/shipments", {
       method: "POST",
-      body: teloZasilky({ dsw: dpd.dsw, varianta: v, balicku, reference, poznamka, odesilatel: odesilatel!, prijemce: prijemce!, registrovana, adresaPlatce }),
+      body: teloZasilky({ dsw: dpd.dsw, varianta: v, balicku, reference, poznamka, odesilatel: odesilatel!, prijemce: prijemce!, registrovana, adresaPlatce, prijemceJeUcet }),
     });
     if (sRes.ok) { sData = await sRes.json().catch(() => null); varianta = v; break; }
     chybyZasilky.push(`${v}: ${await textChybyDpd(sRes)}`);

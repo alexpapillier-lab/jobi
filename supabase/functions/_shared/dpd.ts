@@ -132,6 +132,12 @@ export function teloZasilky(p: {
   registrovana?: RegistrovanaAdresa | null;
   /** Plátce u Return/Collection (příjemce není adresa účtu). */
   adresaPlatce: AdresaPlatce;
+  /**
+   * Příjemce je registrovaná adresa účtu (Brno → Praha). Pak se zásilka
+   * posílá přesně jako zákaznický svoz na servis.iswap.cz: plátce jen
+   * zákazník (DSW), bez adresy plátce.
+   */
+  prijemceJeUcet?: boolean;
 }): unknown[] {
   const poznamka = (p.poznamka ?? "").trim().slice(0, 35);
   const zaklad = {
@@ -156,8 +162,10 @@ export function teloZasilky(p: {
     ...zaklad,
     shipmentType: p.varianta === "collection" ? "Collection" : "Return",
     sender: p.odesilatel,
-    // Příjemce (druhá pobočka) není adresa DPD účtu → plátce s registrovanou adresou.
-    payer: { customer: { dsw: p.dsw }, customerAddress: p.adresaPlatce },
+    // Příjemce je adresa účtu (Brno → Praha): stejně jako zákaznický svoz na
+    // servis.iswap.cz jen DSW. Jinak (Praha → Brno) by DPD vrátilo
+    // ShipmentSpecificationError – plátce pak nese registrovanou adresu.
+    payer: p.prijemceJeUcet ? { customer: { dsw: p.dsw } } : { customer: { dsw: p.dsw }, customerAddress: p.adresaPlatce },
     ...(p.varianta === "return" ? { services: { dpdReturn: true } } : {}),
   }];
 }

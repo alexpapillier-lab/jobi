@@ -67,6 +67,15 @@ describe("zásilka DPD", () => {
     expect(kuryr.shipmentType).toBe("Collection");
     expect(kuryr.services).toBeUndefined();
     expect(kuryr.references).toEqual({ ref1: "Z-0001" });
+    expect(kuryr.payer).toEqual({ customer: { dsw: "1" }, customerAddress: { id: 5 } });
+  });
+
+  it("Brno → Praha (cíl je adresa účtu): kurýr jako zákaznický svoz na servis.iswap.cz", () => {
+    const [kuryr] = teloZasilky({ dsw: "15500476", varianta: "collection", balicku: 1, reference: "Z-0020", odesilatel: a, prijemce: b, adresaPlatce: { it4emId: 77 }, prijemceJeUcet: true }) as any[];
+    expect(kuryr.shipmentType).toBe("Collection");
+    expect(kuryr.payer).toEqual({ customer: { dsw: "15500476" } });
+    expect(kuryr.sender).toEqual(a);
+    expect(kuryr.receiver).toEqual(b);
   });
 
   it("z registrované adresy účtu: Standard + Shop to Home, odesílatel = registrovaná adresa", () => {
