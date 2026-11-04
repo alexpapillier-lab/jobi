@@ -21,6 +21,9 @@ import {
   type ZakazkaDnes,
 } from "../lib/dnes";
 import { RadekSekce, SekceKarta, type TonSekce } from "./Dnes/SekceKarta";
+import { usePokladnaDnes } from "./Dnes/usePokladnaDnes";
+import { cenaZakazky } from "../lib/pokladna";
+import { kc } from "./Pokladna/format";
 import { useDnesData, usePridelovaniTechnika } from "./Dnes/useDnesData";
 import { nactiRozsahDnes, ulozRozsahDnes } from "./Dnes/predvolby";
 import { useObjednavky, zalozitZakazkuZObjednavky, StitekObjednavky } from "./Orders/PrichoziObjednavky";
@@ -92,6 +95,7 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
   const { statuses, loading: stavyNacitam, getByKey } = useStatuses();
   const { activeBranchId, isMulti, activeBranch, branchById } = useBranches();
   const { zasilkyZapnuty } = useNastaveniServisu(activeServiceId);
+  const pokladna = usePokladnaDnes(activeServiceId, activeBranchId, statuses);
   const chatZapnuty = useChatZapnuty(activeServiceId);
   const pridelovani = usePridelovaniTechnika(activeServiceId);
 
@@ -394,6 +398,44 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
                 z.expectedAt && new Date(z.expectedAt).getTime() < ted.getTime() ? "danger" : "accent",
               ),
             )}
+          </SekceKarta>
+        )}
+
+        {pokladna.zapnuto && pokladna.nezaplacene.length + pokladna.bezUzaverky.length > 0 && (
+          <SekceKarta
+            dataTour="dnes-pokladna"
+            titulek="Pokladna"
+            popis="Vydané zakázky bez zapsané platby a pokladny, kterým chybí uzávěrka z minulých dnů."
+            pocet={pokladna.nezaplacene.length + pokladna.bezUzaverky.length}
+            ton="warning"
+            prazdno=""
+            akce={<Button variant="ghost" size="sm" onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "pokladna" } }))}>Otevřít pokladnu</Button>}
+          >
+            {[
+              ...pokladna.bezUzaverky.map((p) => (
+                <RadekSekce
+                  key={`u-${p.id}`}
+                  onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "pokladna" } }))}
+                  titulek="Chybí uzávěrka"
+                  podtitulek={p.nazev}
+                  poznamka="uzavřít"
+                  poznamkaTon="danger"
+                  title="Otevřít pokladnu"
+                />
+              )),
+              ...pokladna.nezaplacene.map((t) => (
+                <RadekSekce
+                  key={`t-${t.id}`}
+                  onClick={() => otevriZakazku(t.id)}
+                  kod={t.code}
+                  titulek={t.title?.trim() || "Zakázka"}
+                  podtitulek={t.customerName ?? undefined}
+                  poznamka={`vydáno bez platby · ${kc(cenaZakazky(t))}`}
+                  poznamkaTon="warning"
+                  title="Otevřít detail zakázky"
+                />
+              )),
+            ]}
           </SekceKarta>
         )}
 

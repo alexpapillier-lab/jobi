@@ -20,6 +20,8 @@ import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
 import Zasilky from "./pages/Zasilky";
+import Pokladna from "./pages/Pokladna";
+import { useNastaveniPokladny } from "./hooks/useNastaveniPokladny";
 import { useZasilkyZapnuty } from "./hooks/useZasilkyZapnuty";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -215,7 +217,7 @@ export default function App() {
   const [startovni] = useState<{ stranka: NavKey; obnovena: boolean }>(() => {
     // Po tiché obnově webu (nová verze) se vrátit tam, kde uživatel byl.
     const s = strankaPoObnove();
-    const zname: NavKey[] = ["dnes", "orders", "sms", "calendar", "inventory", "devices", "customers", "invoices", "zasilky", "statistics", "provize", "odmeny", "settings"];
+    const zname: NavKey[] = ["dnes", "orders", "sms", "calendar", "inventory", "devices", "customers", "invoices", "zasilky", "pokladna", "statistics", "provize", "odmeny", "settings"];
     if (s && (zname as string[]).includes(s)) return { stranka: s as NavKey, obnovena: true };
     // Jinak stránka podle volby „Po přihlášení otevřít“ (výchozí Zakázky).
     return { stranka: safeLoadUIConfig().app.startPage === "dnes" ? "dnes" : "orders", obnovena: false };
@@ -414,6 +416,11 @@ export default function App() {
   /* Zásilky mezi pobočkami: zapíná správce v Nastavení, potřebuje modul poboček. */
   const zasilkyZapnuty = useZasilkyZapnuty(activeServiceId);
   const zasilkyAvailable = zasilkyZapnuty && hasModule("branches");
+  /* Pokladna: zapíná správce v Nastavení → Firma → Pokladna. Člen ji má,
+     dokud mu někdo neodebere právo can_use_pokladna (chybějící klíč =
+     povoleno, stejně jako u statistik a v databázi – pokladna_smi). */
+  const nastaveniPokladny = useNastaveniPokladny(activeServiceId);
+  const pokladnaAvailable = nastaveniPokladny.zapnuto && (isAdmin || capabilities.can_use_pokladna !== false);
   /** Dnes je od 9. 10. 2026 ve výchozím stavu vypnutá; každý si ji zapne sám v Nastavení → Rozhraní (osobní předvolba). */
   // Stránka Dnes je dostupná vždy (zkratka T, „Po přihlášení otevřít“, průvodce);
   // v postranním panelu je jen tomu, kdo si ji v Rozhraní přidá (od 9. 10. 2026).
@@ -445,10 +452,10 @@ export default function App() {
       admin: isAdmin,
       rootOwner: jeRootOwner,
       web: isWeb(),
-      stranky: { dnes: dnesAvailable, orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
+      stranky: { dnes: dnesAvailable, orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, pokladna: pokladnaAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
       moduly: { api_catalog: hasModule("api_catalog"), api_inventory: hasModule("api_inventory"), branches: hasModule("branches"), invoices: hasModule("invoices"), sms: hasModule("sms") },
     }),
-    [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, odmenyAvailable, provizeAvailable, dnesAvailable, hasModule]
+    [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, pokladnaAvailable, odmenyAvailable, provizeAvailable, dnesAvailable, hasModule]
   );
   const pruvodciDostupni = useMemo(() => dostupniPruvodci(kontextPruvodcu), [kontextPruvodcu]);
 
@@ -850,6 +857,9 @@ export default function App() {
       setActivePage("orders");
     }
   }, [zasilkyAvailable, activePage]);
+  useEffect(() => {
+    if (!pokladnaAvailable && activePage === "pokladna") setActivePage("orders");
+  }, [pokladnaAvailable, activePage]);
 
   // Člen bez práva na statistiky na nich nesmí zůstat (po přepnutí servisu,
   // po odebrání práva za běhu).
@@ -975,12 +985,13 @@ export default function App() {
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
-      if (page && ["dnes", "orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize", "odmeny"].includes(page)) {
+      if (page && ["dnes", "orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "pokladna", "provize", "odmeny"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         if (page === "statistics" && !canViewStatistics) return;
         if (page === "provize" && !provizeAvailable) return;
         if (page === "odmeny" && !odmenyAvailable) return;
         if (page === "zasilky" && !zasilkyAvailable) return;
+        if (page === "pokladna" && !pokladnaAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
         const sub = ev.detail?.subsection;
@@ -998,7 +1009,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     // Dostupnost stránek se mění po načtení (sdílené provize, modul zásilek,
     // pravidla odměn) – bez nich tu zůstal starý handler, který novou
     // stránku odmítl, i když už byla v navigaci.
-  }, [invoicesAvailable, canViewStatistics, provizeAvailable, zasilkyAvailable, odmenyAvailable, dnesAvailable]);
+  }, [invoicesAvailable, canViewStatistics, provizeAvailable, zasilkyAvailable, pokladnaAvailable, odmenyAvailable, dnesAvailable]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -1202,6 +1213,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         return "Faktury";
       case "zasilky":
         return "Zásilky";
+      case "pokladna":
+        return "Pokladna";
       case "settings":
         return "Settings";
       default:
@@ -1462,6 +1475,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsEnabled={smsEnabled}
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
+          pokladnaEnabled={pokladnaAvailable}
           dnesEnabled={dnesVPanelu}
           provizeEnabled={provizeAvailable}
           odmenyEnabled={odmenyVNavigaci}
@@ -1677,6 +1691,20 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
+          {pokladnaAvailable && visitedPages.has("pokladna") && (
+            <div data-tour="page-pokladna" style={{ display: activePage === "pokladna" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "pokladna"}>
+              <Pokladna
+                activeServiceId={activeServiceId}
+                nastaveni={nastaveniPokladny}
+                aktivni={activePage === "pokladna"}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "pokladna" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
           {visitedPages.has("settings") && (
             <div data-tour="page-settings" style={{ display: activePage === "settings" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "settings"}>
             <Settings
@@ -1702,7 +1730,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
 
           {/* "sms" v seznamu chybělo, takže se pod SMS chaty vykresloval navíc
               prázdný panel "Placeholder page." Stejně Provize a Odměny. */}
-          {!["dnes", "orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms", "zasilky", "provize", "odmeny"].includes(activePage) && (
+          {!["dnes", "orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms", "zasilky", "pokladna", "provize", "odmeny"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

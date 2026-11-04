@@ -23,6 +23,7 @@ const ALLOWED_KEYS = [
   "branch_only",
   "can_edit_service_settings",
   "can_view_statistics",
+  "can_use_pokladna",
 ];
 
 serve(async (req) => {

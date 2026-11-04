@@ -35,6 +35,7 @@ const STATS: Tab = { key: "statistics", label: "Statistiky", icon: icon("M18 20V
 const PROVIZE: Tab = { key: "provize", label: "Provize", icon: icon("M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4") };
 const ODMENY: Tab = { key: "odmeny", label: "Odměny", icon: icon("M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a2 2 0 0 0 0 4h3M17 6h3a2 2 0 0 1 0 4h-3") };
 const ZASILKY: Tab = { key: "zasilky", label: "Zásilky", icon: icon("M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM8 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z") };
+const POKLADNA: Tab = { key: "pokladna", label: "Pokladna", icon: icon("M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12h.01M18 12h.01") };
 const SETTINGS: Tab = { key: "settings", label: "Nastavení", icon: icon("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z") };
 
 /* Dnes je první – technik na telefonu začíná tam. Aby zůstaly čtyři hlavní
@@ -52,6 +53,7 @@ export type BottomNavProps = {
   /** Člen bez práva can_view_statistics záložku Statistiky nevidí. */
   statisticsEnabled?: boolean;
   zasilkyEnabled?: boolean;
+  pokladnaEnabled?: boolean;
   dnesEnabled?: boolean;
   provizeEnabled?: boolean;
   odmenyEnabled?: boolean;
@@ -74,6 +76,7 @@ export function BottomNav({
   smsUnreadCount = 0,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  pokladnaEnabled = false,
   dnesEnabled = true,
   provizeEnabled = false,
   odmenyEnabled = false,
@@ -108,6 +111,7 @@ export function BottomNav({
     DEVICES,
     ...(invoicingEnabled ? [INVOICES] : []),
     ...(zasilkyEnabled ? [ZASILKY] : []),
+    ...(pokladnaEnabled ? [POKLADNA] : []),
     ...(statisticsEnabled ? [STATS] : []),
     ...(provizeEnabled ? [PROVIZE] : []),
     ...(odmenyEnabled ? [ODMENY] : []),

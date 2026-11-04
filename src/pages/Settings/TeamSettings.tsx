@@ -38,6 +38,7 @@ const CAPABILITY_KEYS = [
   "can_adjust_inventory_quantity",
   "can_edit_service_settings",
   "can_view_statistics",
+  "can_use_pokladna",
   "branch_only",
 ] as const;
 
@@ -101,6 +102,11 @@ const CAPABILITY_INFO: Record<string, CapabilityInfo> = {
     label: "Vidět statistiky",
     description: "Může otevřít stránku Statistiky – obrat, zisk, marže a žebříčky. Po odebrání stránku v navigaci nevidí a server mu čísla nevydá. Nově pozvaní členové ji vidí, dokud jim právo neodeberete.",
     group: "Statistiky",
+  },
+  can_use_pokladna: {
+    label: "Pokladna",
+    description: "Může otevřít Pokladnu – přijímat platby za zakázky, zapisovat příjmy a výdaje, dělat uzávěrku a vidět stav a historii. Platí, jen když má servis Pokladnu zapnutou. Nově pozvaní členové ji mají, dokud jim právo neodeberete.",
+    group: "Pokladna",
   },
   can_edit_devices: {
     label: "Stránka Zařízení",
@@ -1045,6 +1051,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                       // databáze bez migrace) je proto „povoleno“, ne „zakázáno“.
                       // Stejně to čte App.tsx i databázová kontrola.
                       initial.can_view_statistics = caps.can_view_statistics !== false;
+                      initial.can_use_pokladna = caps.can_use_pokladna !== false;
                       setCapabilitiesEdit(initial);
                       setCapabilitiesMember({
                         user_id: member.user_id,

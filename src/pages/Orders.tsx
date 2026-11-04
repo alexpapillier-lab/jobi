@@ -1421,6 +1421,21 @@ export default function Orders({
     return true;
   };
 
+  /* Pokladna po zaplacení vydává zakázku tudy, ať proběhne všechno, co
+     k vydání patří (sklad, automatický tisk, automatizace). Stránka Zakázky
+     je připojená vždycky (App ji má mezi navštívenými od startu). */
+  const provedZmenuStavuRef = useRef(provedZmenuStavu);
+  provedZmenuStavuRef.current = provedZmenuStavu;
+  useEffect(() => {
+    const onZmena = (e: Event) => {
+      const d = (e as CustomEvent<{ ticketId?: string; statusKey?: string; hotovo?: (ok: boolean) => void }>).detail;
+      if (!d?.ticketId || !d.statusKey) return;
+      void provedZmenuStavuRef.current(d.ticketId, d.statusKey).then((ok) => d.hotovo?.(ok), () => d.hotovo?.(false));
+    };
+    window.addEventListener("jobsheet:zmen-stav-zakazky", onZmena);
+    return () => window.removeEventListener("jobsheet:zmen-stav-zakazky", onZmena);
+  }, []);
+
 
   /** Skončil poslední zápis ve frontě? Pak se nesmí hlásit „Změny uloženy“. */
   const zapisSkoncilVeFronteRef = useRef(false);
