@@ -34,7 +34,7 @@ export function Okno({ titulek, podtitulek, onClose, children, sirka = 460 }: { 
       onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10_000, padding: 16 }}
     >
-      <div style={{ background: "var(--panel)", color: "var(--text)", borderRadius: 18, border: "1px solid var(--border)", padding: 20, width: `min(100%, ${sirka}px)`, maxHeight: "92vh", overflow: "auto", display: "grid", gap: 16, boxShadow: "0 24px 70px rgba(0,0,0,0.35)" }}>
+      <div style={{ background: "var(--panel)", color: "var(--text)", borderRadius: 18, border: "1px solid var(--border)", padding: 20, width: `min(100%, ${sirka}px)`, maxHeight: "92vh", overflow: "auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, boxSizing: "border-box", boxShadow: "0 24px 70px rgba(0,0,0,0.35)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 850 }}>{titulek}</h2>
@@ -62,12 +62,13 @@ export function PoleCastky({ value, onChange, autoFocus = true, label = "Částk
         <input
           ref={ref}
           value={value}
+          size={1}
           inputMode="decimal"
           aria-label={label}
           placeholder="0"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }}
-          style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: "var(--text)", fontSize: 30, fontWeight: 850, fontFamily: "inherit", fontVariantNumeric: "tabular-nums" }}
+          style={{ flex: 1, minWidth: 0, width: "100%", border: "none", outline: "none", background: "transparent", color: "var(--text)", fontSize: 30, fontWeight: 850, fontFamily: "inherit", fontVariantNumeric: "tabular-nums" }}
         />
         <span style={{ fontSize: 18, color: "var(--muted)", fontWeight: 700 }}>Kč</span>
       </span>
@@ -340,7 +341,10 @@ export function PrevodOkno({ z, pokladny, nazevPobocky, onClose, onPotvrdit }: {
       setPracuji(false);
     }
   };
-  const popisek = (p: Pokladna) => [p.nazev, nazevPobocky(p.branchId)].filter(Boolean).join(" · ");
+  const popisek = (p: Pokladna) => {
+    const pobocka = nazevPobocky(p.branchId);
+    return pobocka && pobocka !== p.nazev ? `${p.nazev} · ${pobocka}` : p.nazev;
+  };
   return (
     <Okno titulek="Převod mezi pokladnami" podtitulek={`Z pokladny ${popisek(z)}`} onClose={onClose}>
       {cile.length === 0 ? (
@@ -349,7 +353,7 @@ export function PrevodOkno({ z, pokladny, nazevPobocky, onClose, onPotvrdit }: {
         <>
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Do pokladny</span>
-            <select className="ui-input" value={doId} onChange={(e) => setDoId(e.target.value)} aria-label="Cílová pokladna">
+            <select className="ui-input" value={doId} onChange={(e) => setDoId(e.target.value)} aria-label="Cílová pokladna" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}>
               {cile.map((p) => <option key={p.id} value={p.id}>{popisek(p)}</option>)}
             </select>
           </label>
