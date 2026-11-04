@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { jeCiselnePole, zapniOchranuCiselnychPoli, zpracujKolecko } from "./ciselnaPole";
+import { ctiCisloZPole, jeCiselnePole, zapniOchranuCiselnychPoli, zpracujKolecko } from "./ciselnaPole";
 
 const pole = (type: string, tagName = "INPUT") => ({ tagName, type, blur: vi.fn() });
 
@@ -74,5 +74,21 @@ describe("zapniOchranuCiselnychPoli", () => {
     const { doc } = falesnyDokument(null);
     zapniOchranuCiselnychPoli(doc)();
     expect(doc.removeEventListener).toHaveBeenCalledWith("wheel", expect.any(Function), { capture: true });
+  });
+});
+
+describe("ctiCisloZPole", () => {
+  it("čte čísla, jak je lidé píšou", () => {
+    expect(ctiCisloZPole("1 250")).toBe(1250);
+    expect(ctiCisloZPole("1250,50")).toBe(1250.5);
+    expect(ctiCisloZPole("1\u00a0250 Kč")).toBe(1250);
+    expect(ctiCisloZPole("45 min")).toBe(45);
+    expect(ctiCisloZPole("")).toBe(0);
+  });
+
+  it("nesmysl není nula", () => {
+    expect(ctiCisloZPole("abc")).toBeNull();
+    expect(ctiCisloZPole("12a")).toBeNull();
+    expect(ctiCisloZPole("1.2.3")).toBeNull();
   });
 });

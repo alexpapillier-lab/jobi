@@ -9,7 +9,7 @@ import { sloucZakazkuZDb, zapisZakazkyBezi, zacniZapis, ukonciZapis, type Eviden
  * kdy se řádek z databáze převezme celý a kdy se opravy podrží místní.
  */
 
-type Z = { id: string; status: string; performedRepairs?: string[]; testChecklist?: string; loaner?: string };
+type Z = { id: string; status: string; performedRepairs?: string[]; testChecklist?: string; loaner?: string; discountType?: string | null; discountValue?: number | null };
 
 const mistni: Z = { id: "z1", status: "received", performedRepairs: ["displej"], testChecklist: "ok", loaner: "iPhone" };
 const zDb: Z = { id: "z1", status: "in_progress", performedRepairs: [], testChecklist: undefined, loaner: undefined };
@@ -37,6 +37,15 @@ describe("sloučení zakázky z databáze s místním stavem", () => {
 
   it("odložený zápis (úprava ceny čeká 400 ms) drží místní opravy stejně", () => {
     expect(sloucZakazkuZDb(mistni, zDb, evidence({ odlozene: ["z1"] }), "z1").performedRepairs).toEqual(["displej"]);
+  });
+
+  it("sleva, jejíž zápis čeká nebo běží, se realtime ozvěnou nepřepíše (sleva „se neuložila“)", () => {
+    const s: Z = { ...mistni, discountType: "percentage", discountValue: 10 };
+    const db: Z = { ...zDb, discountType: null, discountValue: null };
+    expect(sloucZakazkuZDb(s, db, evidence({ odlozene: ["z1"] }), "z1")).toMatchObject({ discountType: "percentage", discountValue: 10 });
+    expect(sloucZakazkuZDb(s, db, evidence({ bezici: [["z1", 1]] }), "z1")).toMatchObject({ discountType: "percentage", discountValue: 10 });
+    // Po dokončení zápisu platí databáze (už slevu má).
+    expect(sloucZakazkuZDb(s, db, evidence(), "z1").discountType).toBeNull();
   });
 
   it("opravy po neúspěšném zápisu čekají na zavření detailu a realtime je nesmí zahodit", () => {

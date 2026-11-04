@@ -3,7 +3,6 @@
  * objednání u dodavatele), součet se slevou a přidání další opravy.
  * Vyneseno z Orders.tsx beze změny obsahu; zápisy oprav drží kontejner.
  */
-import type React from "react";
 import { SectionHeading } from "../../components/SectionHeading";
 import { WrenchIcon } from "../../components/icons";
 import { PerformedRepairItem, PerformedRepairAdder, DiscountPicker, TlacitkaSlev, type PerformedRepair } from "../../components/orders";
@@ -42,7 +41,8 @@ type Props = {
   /** Oprávnění can_edit_inventory – smí objednat díly u dodavatele. */
   muzeObjednatDily: boolean;
   refreshObjednanoProZakazku: (ticketId: string) => Promise<void>;
-  setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
+  /** Sleva se ukládá hned (s krátkým odkladem při psaní) – viz useZapisyZakazky. */
+  ulozSlevu: (ticketId: string, typ: "percentage" | "amount" | null, hodnota: number) => void;
   prednastaveneSlevy: PrednastavenaSleva[];
   availableRepairs: DeviceRepair[];
   addPerformedRepair: (ticketId: string, repair: NovaProvedenaOprava) => void;
@@ -69,7 +69,7 @@ export function DetailOpravy({
   objednanoProZakazku,
   muzeObjednatDily,
   refreshObjednanoProZakazku,
-  setCloudTickets,
+  ulozSlevu,
   prednastaveneSlevy,
   availableRepairs,
   addPerformedRepair,
@@ -152,15 +152,7 @@ export function DetailOpravy({
                   <DiscountPicker
                     discountType={discountType ?? null}
                     discountValue={discountValue || 0}
-                    onChange={(type, value) => {
-                      setCloudTickets((prev) =>
-                        prev.map((t) =>
-                          t.id === detailedTicket.id
-                            ? { ...t, discountType: type, discountValue: type ? value : undefined }
-                            : t
-                        )
-                      );
-                    }}
+                    onChange={(type, value) => ulozSlevu(detailedTicket.id, type, value)}
                   />
 
                   {/* Přednastavené slevy (Nastavení → Zakázky → Slevy): jedno
@@ -170,15 +162,7 @@ export function DetailOpravy({
                     slevy={prednastaveneSlevy}
                     discountType={discountType}
                     discountValue={discountValue}
-                    onChange={(type, value) => {
-                      setCloudTickets((prev) =>
-                        prev.map((t) =>
-                          t.id === detailedTicket.id
-                            ? { ...t, discountType: type, discountValue: type ? value : undefined }
-                            : t
-                        )
-                      );
-                    }}
+                    onChange={(type, value) => ulozSlevu(detailedTicket.id, type, value)}
                   />
 
                   {discountAmount > 0 && (

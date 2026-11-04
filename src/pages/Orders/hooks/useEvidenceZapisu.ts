@@ -17,11 +17,14 @@ export function useEvidenceZapisu() {
    * jinak by po nich zůstala jen rezervace dílů ve skladu.
    */
   const neulozeneOpravyRef = useRef<Set<string>>(new Set());
+  /** Odložené zápisy slevy – psaní hodnoty jinak posílá zápis na každou klávesu. */
+  const odlozenaSlevaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
   /** Evidence pro sloučení řádku z databáze s pamětí – viz src/lib/slouceniZakazky.ts. */
   const evidenceZapisu = useCallback(
     (): EvidenceZapisu => ({
       bezici: rozpracovaneZapisyOpravRef.current,
-      odlozene: odlozeneZapisyOpravRef.current,
+      // Odložená sleva drží paměť stejně jako odložené opravy.
+      odlozene: { has: (id: string) => odlozeneZapisyOpravRef.current.has(id) || odlozenaSlevaRef.current.has(id) },
       neulozene: neulozeneOpravyRef.current,
     }),
     []
@@ -31,5 +34,5 @@ export function useEvidenceZapisu() {
   /** Odložené zápisy diagnostiky psané v detailu reklamace. */
   const odlozenaDiagnostikaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void; patch: Record<string, unknown> }>>(new Map());
 
-  return { rozpracovaneZapisyOpravRef, odlozeneZapisyOpravRef, neulozeneOpravyRef, evidenceZapisu, odlozenaKontrolaRef, odlozenaDiagnostikaRef };
+  return { rozpracovaneZapisyOpravRef, odlozeneZapisyOpravRef, neulozeneOpravyRef, evidenceZapisu, odlozenaKontrolaRef, odlozenaDiagnostikaRef, odlozenaSlevaRef };
 }

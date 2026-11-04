@@ -44,3 +44,16 @@ export function zapniOchranuCiselnychPoli(doc: Dokument): () => void {
   doc.addEventListener("wheel", obsluha, { passive: true, capture: true });
   return () => doc.removeEventListener("wheel", obsluha, { capture: true });
 }
+
+/**
+ * Číslo z textového pole tak, jak ho lidé píšou: „1 250“, „1250,50“,
+ * „1 250 Kč“. Prázdné pole = 0. Nesmysl = null – volající ho nesmí uložit
+ * jako nulu (dřív `parseFloat("") || 0` z nepochopené ceny udělal 0 Kč).
+ */
+export function ctiCisloZPole(text: string): number | null {
+  const t = text.replace(/[\s\u00a0]|Kč|min/gi, "").replace(",", ".");
+  if (!t) return 0;
+  if (!/^-?\d*\.?\d+$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}

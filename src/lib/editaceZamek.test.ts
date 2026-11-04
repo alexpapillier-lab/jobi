@@ -105,7 +105,7 @@ describe("konflikt při uložení", () => {
     const zDb = { ...zaklad, version: 4 };
     const zapisujeme = { ...zDb, diagnosticText: mistni.diagnosticText, performedRepairs: mistni.performedRepairs };
     const vynechat = drzeneKlice({ diagnosticText: true, diagnosticPhotos: false, performedRepairs: false }, true);
-    expect([...vynechat].sort()).toEqual(["diagnosticText", "performedRepairs"]);
+    expect([...vynechat].sort()).toEqual(["diagnosticText", "discountType", "discountValue", "performedRepairs"]);
     expect(konfliktniPole(mistni, zDb, zapisujeme, vynechat)).toEqual([]);
   });
 

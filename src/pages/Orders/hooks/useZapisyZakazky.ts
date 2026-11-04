@@ -43,6 +43,7 @@ type Vstup = {
   neulozeneOpravyRef: Evidence["neulozeneOpravyRef"];
   odlozenaKontrolaRef: Evidence["odlozenaKontrolaRef"];
   odlozenaDiagnostikaRef: Evidence["odlozenaDiagnostikaRef"];
+  odlozenaSlevaRef: Evidence["odlozenaSlevaRef"];
 };
 
 export function useZapisyZakazky({
@@ -62,6 +63,7 @@ export function useZapisyZakazky({
   neulozeneOpravyRef,
   odlozenaKontrolaRef,
   odlozenaDiagnostikaRef,
+  odlozenaSlevaRef,
 }: Vstup) {
   /**
    * Zákazník schválil nabídku – její položky se stanou provedenými opravami.
@@ -209,6 +211,10 @@ export function useZapisyZakazky({
       clearTimeout(casovac);
       proved();
     }
+    for (const { casovac, proved } of odlozenaSlevaRef.current.values()) {
+      clearTimeout(casovac);
+      proved();
+    }
   }, []);
 
   useEffect(() => {
@@ -311,6 +317,47 @@ export function useZapisyZakazky({
   const updatePerformedRepairProducts = useCallback((ticketId: string, repairId: string, productIds: string[]) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
   }, [upravProvedeneOpravy]);
+
+  /**
+   * Sleva zakázky. Dřív se jen přepsala v paměti: zavření detailu ji
+   * neukládalo (nebyl to „rozepsaný“ údaj) a realtime ozvěna jiného zápisu
+   * ji vrátila na hodnotu z databáze – sleva „se neuložila“. Teď se zapíše
+   * sama, s odkladem 500 ms (pole hodnoty volá změnu na každou klávesu);
+   * zavření detailu odklad dorovná. Při výpadku sítě ji dopíše fronta.
+   */
+  const ulozSlevu = useCallback((ticketId: string, typ: "percentage" | "amount" | null, hodnota: number) => {
+    const discountValue = typ ? hodnota : undefined;
+    cloudTicketsRef.current = cloudTicketsRef.current.map((t) => (t.id === ticketId ? { ...t, discountType: typ, discountValue } : t));
+    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, discountType: typ, discountValue } : t)));
+    if (!supabase) return;
+    const odlozene = odlozenaSlevaRef.current;
+    const cekajici = odlozene.get(ticketId);
+    if (cekajici) clearTimeout(cekajici.casovac);
+    const data = { discount_type: typ, discount_value: typ ? hodnota : null };
+    const proved = () => {
+      odlozene.delete(ticketId);
+      void sOkamzitymZapisem(ticketId, async () => {
+        const { error } = await (supabase!.from("tickets") as any).update(data).eq("id", ticketId);
+        if (error) throw error;
+      }).catch((err) => {
+        devLog("[sleva] zápis selhal", err);
+        if (jeTrvalaChyba(err)) {
+          showToast(`Slevu se nepodařilo uložit: ${err instanceof Error ? err.message : (err as { message?: string })?.message ?? "neznámá chyba"}`, "error");
+          return;
+        }
+        ulozNaPozdeji({
+          klic: `tickets:${ticketId}:discount`,
+          tabulka: "tickets",
+          id: ticketId,
+          data,
+          popis: `Sleva · ${popisZakazky(ticketId)}`,
+          serviceId: activeServiceIdRef.current,
+          chyba: err,
+        });
+      });
+    };
+    odlozene.set(ticketId, { casovac: setTimeout(proved, 500), proved });
+  }, [sOkamzitymZapisem, popisZakazky]);
 
   /** Náhradní zařízení se ukládá hned – smlouva se tiskne vzápětí a data musí být v DB. */
   const ulozZapujcku = useCallback(async (ticketId: string, zapujcka: ZapujckaData | null) => {
@@ -485,5 +532,6 @@ export function useZapisyZakazky({
     ulozTechnika,
     ulozKontrolu,
     ulozDiagnostikuZakazky,
+    ulozSlevu,
   };
 }

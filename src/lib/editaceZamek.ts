@@ -361,6 +361,11 @@ export function drzeneKlice(rozepsane: RozepsaneVDetailu, opravyVPameti: boolean
     s.add("diagnosticPhotosBefore");
   }
   if (rozepsane.performedRepairs || opravyVPameti) s.add("performedRepairs");
+  // Sleva se ukládá stejně jako opravy – během zápisu drží paměť.
+  if (opravyVPameti) {
+    s.add("discountType");
+    s.add("discountValue");
+  }
   return s;
 }
 

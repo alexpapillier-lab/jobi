@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { ctiCisloZPole } from "../../lib/ciselnaPole";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { showToast } from "../Toast";
 import { STORAGE_KEYS } from "../../constants/storageKeys";
@@ -46,6 +47,46 @@ export function PerformedRepairItem({
       setSelectedProductIds(repair.productIds || []);
     }
   }, [repair.price, repair.costs, repair.estimatedTime, repair.productIds, isEditing]);
+
+  /**
+   * Hodnoty z polí úprav uloží k zakázce. Nepochopenou částku neuloží
+   * (dřív se z ní stala 0 Kč) – ohlásí ji a úprava zůstane otevřená.
+   */
+  const ulozitProZakazku = (tise = false): { price: number; costs: number; time: number } | null => {
+    const price = ctiCisloZPole(priceValue);
+    const costs = ctiCisloZPole(costsValue);
+    const time = ctiCisloZPole(timeValue);
+    if (price === null || costs === null || time === null) {
+      if (!tise) showToast(`${price === null ? "Cena" : costs === null ? "Náklady" : "Čas"} není číslo – opravte ho a uložte znovu.`, "error");
+      return null;
+    }
+    const cas = Math.round(time);
+    if (price !== (repair.price || 0)) onUpdatePrice(repair.id, price);
+    if (costs !== (repair.costs || 0)) onUpdateCosts(repair.id, costs);
+    if (cas !== (repair.estimatedTime || 0)) onUpdateTime(repair.id, cas);
+    if (selectedProductIds.join("|") !== (repair.productIds || []).join("|")) onUpdateProducts(repair.id, selectedProductIds);
+    return { price, costs, time: cas };
+  };
+
+  /* Rozepsaná úprava se neztratí: zavřený detail (komponenta zmizí) uloží,
+     co je v polích, stejně jako tlačítko „Uložit pouze pro zakázku“. Dřív
+     změněná cena bez kliknutí na Uložit tiše zmizela. */
+  const ulozitRef = useRef<{ edituje: boolean; uloz: () => void }>({ edituje: false, uloz: () => {} });
+  useEffect(() => {
+    ulozitRef.current = { edituje: isEditing, uloz: () => { ulozitProZakazku(true); } };
+  });
+  useEffect(() => () => {
+    if (ulozitRef.current.edituje) ulozitRef.current.uloz();
+  }, []);
+
+  /** Enter v poli = Uložit pouze pro zakázku. */
+  const naEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!ulozitProZakazku()) return;
+    setIsEditing(false);
+    showToast("Uloženo", "success");
+  };
 
   // Find repair in catalog by ID or by name
   const catalogRepair = repair.repairId 
@@ -145,7 +186,9 @@ export function PerformedRepairItem({
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)" }}>Cena (Kč):</label>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
+              onKeyDown={naEnter}
               value={priceValue}
               onChange={(e) => setPriceValue(e.target.value)}
               style={{
@@ -163,7 +206,9 @@ export function PerformedRepairItem({
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)" }}>Náklady (Kč):</label>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
+              onKeyDown={naEnter}
               value={costsValue}
               onChange={(e) => setCostsValue(e.target.value)}
               style={{
@@ -181,7 +226,9 @@ export function PerformedRepairItem({
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)" }}>Čas (min):</label>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              onKeyDown={naEnter}
               value={timeValue}
               onChange={(e) => setTimeValue(e.target.value)}
               style={{
@@ -309,13 +356,8 @@ export function PerformedRepairItem({
               <>
                 <button
                   onClick={() => {
-                    const price = parseFloat(priceValue) || 0;
-                    const costs = parseFloat(costsValue) || 0;
-                    const time = parseInt(timeValue) || 0;
-                    onUpdatePrice(repair.id, price);
-                    onUpdateCosts(repair.id, costs);
-                    onUpdateTime(repair.id, time);
-                    onUpdateProducts(repair.id, selectedProductIds);
+                    const h = ulozitProZakazku();
+                    if (!h) return;
                     setIsEditing(false);
                     showToast("Uloženo", "success");
                   }}
@@ -335,13 +377,8 @@ export function PerformedRepairItem({
                 </button>
                 <button
                   onClick={() => {
-                    const price = parseFloat(priceValue) || 0;
-                    const costs = parseFloat(costsValue) || 0;
-                    const time = parseInt(timeValue) || 0;
-                    onUpdatePrice(repair.id, price);
-                    onUpdateCosts(repair.id, costs);
-                    onUpdateTime(repair.id, time);
-                    onUpdateProducts(repair.id, selectedProductIds);
+                    const h = ulozitProZakazku();
+                    if (!h) return;
                     setIsEditing(false);
                     // Update catalog
                     const currentDevices = safeLoadDevicesData();
@@ -349,7 +386,7 @@ export function PerformedRepairItem({
                       ...currentDevices,
                       repairs: currentDevices.repairs.map((r) =>
                         r.id === catalogRepair.id
-                          ? { ...r, price, costs, estimatedTime: time, productIds: selectedProductIds }
+                          ? { ...r, price: h.price, costs: h.costs, estimatedTime: h.time, productIds: selectedProductIds }
                           : r
                       ),
                     };
@@ -378,13 +415,8 @@ export function PerformedRepairItem({
             ) : (
               <button
                 onClick={() => {
-                  const price = parseFloat(priceValue) || 0;
-                  const costs = parseFloat(costsValue) || 0;
-                  const time = parseInt(timeValue) || 0;
-                  onUpdatePrice(repair.id, price);
-                  onUpdateCosts(repair.id, costs);
-                  onUpdateTime(repair.id, time);
-                  onUpdateProducts(repair.id, selectedProductIds);
+                  const h = ulozitProZakazku();
+                  if (!h) return;
                   setIsEditing(false);
                   showToast("Uloženo", "success");
                 }}

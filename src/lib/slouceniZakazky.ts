@@ -19,6 +19,11 @@ export type OkamziteSloupce = {
   performedRepairs?: unknown;
   testChecklist?: unknown;
   loaner?: unknown;
+  /* Sleva se ukládá hned (s odkladem při psaní). Dřív se neukládala vůbec:
+     zůstala jen v paměti a první realtime ozvěna (třeba po uložení opravy)
+     ji přepsala hodnotou z databáze. */
+  discountType?: unknown;
+  discountValue?: unknown;
 };
 
 /** Co se o zakázce ví mimo React: běžící zápisy, odložené zápisy, neuložené opravy. */
@@ -40,7 +45,7 @@ export function zapisZakazkyBezi(ticketId: string, evidence: EvidenceZapisu): bo
   );
 }
 
-export const VSECHNY_OKAMZITE_SLOUPCE: readonly (keyof OkamziteSloupce)[] = ["performedRepairs", "testChecklist", "loaner"];
+export const VSECHNY_OKAMZITE_SLOUPCE: readonly (keyof OkamziteSloupce)[] = ["performedRepairs", "testChecklist", "loaner", "discountType", "discountValue"];
 
 /**
  * Řádek z databáze sloučí s místní zakázkou. Bez rozpracovaného zápisu se

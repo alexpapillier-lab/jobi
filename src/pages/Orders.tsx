@@ -164,7 +164,7 @@ export default function Orders({
   const canPrintExport = hasCapability("can_print_export");
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
-  const { rozpracovaneZapisyOpravRef, odlozeneZapisyOpravRef, neulozeneOpravyRef, evidenceZapisu, odlozenaKontrolaRef, odlozenaDiagnostikaRef } = useEvidenceZapisu();
+  const { rozpracovaneZapisyOpravRef, odlozeneZapisyOpravRef, neulozeneOpravyRef, evidenceZapisu, odlozenaKontrolaRef, odlozenaDiagnostikaRef, odlozenaSlevaRef } = useEvidenceZapisu();
 
   // Refs for race condition protection
   const activeServiceIdRef = useRef<string | null>(activeServiceId);
@@ -868,7 +868,7 @@ export default function Orders({
        detailu se z neúplného řádku měnit nedají, tak se přepsat můžou. */
     const evidence = evidenceZapisu();
     setCloudTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? sloucZakazkuZDb(t, plna, evidence, ticketId, ["performedRepairs"]) : t))
+      prev.map((t) => (t.id === ticketId ? sloucZakazkuZDb(t, plna, evidence, ticketId, ["performedRepairs", "discountType", "discountValue"]) : t))
     );
     return plna;
   }, [refetchTicketById, evidenceZapisu]);
@@ -1113,6 +1113,7 @@ export default function Orders({
     ulozTechnika,
     ulozKontrolu,
     ulozDiagnostikuZakazky,
+    ulozSlevu,
   } = useZapisyZakazky({
     activeServiceId,
     activeServiceIdRef,
@@ -1130,6 +1131,7 @@ export default function Orders({
     neulozeneOpravyRef,
     odlozenaKontrolaRef,
     odlozenaDiagnostikaRef,
+    odlozenaSlevaRef,
   });
 
   const setClaimStatus = async (claimId: string, next: string) => {
@@ -2349,7 +2351,7 @@ export default function Orders({
                 objednanoProZakazku={objednanoProZakazku}
                 muzeObjednatDily={hasCapability("can_edit_inventory")}
                 refreshObjednanoProZakazku={refreshObjednanoProZakazku}
-                setCloudTickets={setCloudTickets}
+                ulozSlevu={ulozSlevu}
                 prednastaveneSlevy={prednastaveneSlevy}
                 availableRepairs={availableRepairs}
                 addPerformedRepair={addPerformedRepair}
