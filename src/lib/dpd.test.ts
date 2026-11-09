@@ -91,7 +91,8 @@ describe("zásilka DPD", () => {
 
   it("varianty podle registrované adresy a tisk štítku", () => {
     expect(variantyZasilky("label", true)).toEqual(["standard_shop", "standard"]);
-    expect(variantyZasilky("courier", true)).toEqual(["standard"]);
+    // Kurýr vždy jako zákaznický svoz na servis.iswap.cz (Collection), i z registrované adresy.
+    expect(variantyZasilky("courier", true)).toEqual(["collection"]);
     expect(variantyZasilky("label", false)).toEqual(["return"]);
     expect(variantyZasilky("courier", false)).toEqual(["collection"]);
     expect(jdeTisknoutStitek("collection")).toBe(false);

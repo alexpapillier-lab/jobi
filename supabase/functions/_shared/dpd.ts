@@ -12,10 +12,15 @@
  *   registrovaná, štítek  = „Standard“ + shopToHome (podání ve výdejně i
  *                           předání kurýrovi); když DPD Shop to Home odmítne,
  *                           čistý „Standard“ (jen předat kurýrovi)
- *   registrovaná, kurýr   = „Standard“ + svoz na registrovanou adresu
  *   jiná, štítek          = „Return“ + dpdReturn (jen výdejní místo)
- *   jiná, kurýr           = „Collection“ + svoz z adresy pobočky (štítek
+ *   kurýr (vždy)          = „Collection“ + svoz z adresy pobočky (štítek
  *                           přiveze kurýr, tisk DPD odmítá)
+ *
+ * Kurýr je od 9. 11. 2026 v obou směrech stejný jako zákaznický svoz na
+ * servis.iswap.cz (confirm-order.js, dpdPickup): Collection, odesílatel =
+ * adresa pobočky, plátce jen DSW. Přání majitele – zákaznické svozy ho
+ * nestojí 300 Kč jako dřívější svoz z Brna. Standard se svozem z registrované
+ * adresy se pro kurýra už nepoužívá, ani když je pobočka u DPD registrovaná.
  */
 
 export type RezimDpd = "label" | "courier";
@@ -26,8 +31,8 @@ export type RegistrovanaAdresa = { it4emId: string | number } | { id: string | n
 
 /** Varianty v pořadí, ve kterém se zkouší (další jen když DPD předchozí odmítne). */
 export function variantyZasilky(rezim: RezimDpd, registrovana: boolean): VariantaDpd[] {
-  if (registrovana) return rezim === "label" ? ["standard_shop", "standard"] : ["standard"];
-  return [rezim === "label" ? "return" : "collection"];
+  if (rezim === "courier") return ["collection"];
+  return registrovana ? ["standard_shop", "standard"] : ["return"];
 }
 
 /** Jde k variantě vytisknout štítek? U Collection ho přiveze kurýr (DPD tisk odmítá). */
