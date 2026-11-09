@@ -81,6 +81,8 @@ import {
   runDesktopDocument,
   printTicket,
   printWarranty,
+  printDiagnosticProtocol,
+  exportDiagnosticProtocolToPDF,
 } from "./Orders/tiskZakazky";
 import { baseFieldTextArea, card } from "./Orders/styly";
 import { SmsPanel } from "./Orders/SmsPanel";
@@ -1973,6 +1975,29 @@ export default function Orders({
     !!detailedClaim && hasCapability("can_manage_tickets_basic") && lzePrevestNaZakazku(detailedClaim, isFinal).ok;
 
   /**
+   * Diagnostický protokol z detailu reklamace. Diagnostika reklamace se
+   * zapisuje do napojené (původní) zakázky, takže se tiskne její protokol –
+   * stejný dokument jako z detailu zakázky, s tím, co je právě na obrazovce.
+   */
+  const tiskDiagnostikyReklamace = async (action: DocMode) => {
+    const id = detailedClaim?.source_ticket_id;
+    if (!id) return;
+    // Rozepsaný text se dopíše do databáze; tiskne se verze z obrazovky.
+    dokoncitOdlozeneZapisyOprav();
+    const zakazka = await zajistiPlnouZakazku(id);
+    if (!zakazka) {
+      showToast("Napojenou zakázku se nepodařilo načíst.", "error");
+      return;
+    }
+    if (!zakazka.diagnosticText?.trim() && !(zakazka.diagnosticPhotos?.length) && !(zakazka.diagnosticPhotosBefore?.length)) {
+      showToast("Reklamace zatím nemá diagnostiku.", "info");
+      return;
+    }
+    if (action === "print") await printDiagnosticProtocol(zakazka, activeServiceId);
+    else await exportDiagnosticProtocolToPDF(zakazka, activeServiceId);
+  };
+
+  /**
    * Tisk / export z hlavičky detailu reklamace: „Přijetí reklamace“ při
    * příjmu, „Výdejka reklamace“ s provedenými zákroky při vrácení zařízení.
    */
@@ -2230,6 +2255,7 @@ export default function Orders({
             startEditingClaim={startEditingClaim}
             canPrintExport={canPrintExport}
             runClaimDocument={runClaimDocument}
+            tiskDiagnostikyReklamace={tiskDiagnostikyReklamace}
             setDetailId={setDetailId}
             setDetailClaimId={setDetailClaimId}
             setClaimHistoryModalOpen={setClaimHistoryModalOpen}

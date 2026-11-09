@@ -64,6 +64,8 @@ type Props = {
   startEditingClaim: () => void;
   canPrintExport: boolean;
   runClaimDocument: (action: DocMode, docType?: "prijemka_reklamace" | "vydejka_reklamace") => Promise<void>;
+  /** Diagnostický protokol reklamace (tiskne diagnostiku napojené zakázky). */
+  tiskDiagnostikyReklamace: (action: DocMode) => Promise<void>;
   setDetailId: React.Dispatch<React.SetStateAction<string | null>>;
   setDetailClaimId: React.Dispatch<React.SetStateAction<string | null>>;
   setClaimHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -120,6 +122,7 @@ export function DetailHlavicka({
   startEditingClaim,
   canPrintExport,
   runClaimDocument,
+  tiskDiagnostikyReklamace,
   setDetailId,
   setDetailClaimId,
   setClaimHistoryModalOpen,
@@ -310,6 +313,16 @@ export function DetailHlavicka({
                       onPrint: () => runClaimDocument("print", "vydejka_reklamace"),
                       onExport: () => runClaimDocument("export", "vydejka_reklamace"),
                     },
+                    // Diagnostika reklamace žije na napojené zakázce – bez ní není co tisknout.
+                    ...(detailedClaim.source_ticket_id
+                      ? [{
+                          key: "diagnostic",
+                          label: "Diagnostický protokol",
+                          icon: <DocumentIcon size={14} />,
+                          onPrint: () => { void tiskDiagnostikyReklamace("print"); },
+                          onExport: () => { void tiskDiagnostikyReklamace("export"); },
+                        }]
+                      : []),
                   ]}
                 />
               )}
