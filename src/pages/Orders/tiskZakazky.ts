@@ -92,7 +92,11 @@ export const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = 
   smlouva_zapujcka: "zapujcka",
 };
 
-export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null) {
+/**
+ * `cisla` přepíše číslo dokladu – diagnostický protokol tištěný z reklamace
+ * nese číslo reklamace a číslo zakázky jako „Původní zakázka“.
+ */
+export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast(mode === "print" ? "Vyberte servis pro tisk." : "Vyberte servis pro export.", "error");
@@ -118,9 +122,10 @@ export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint,
       /* tiskne se bez podpisu */
     }
   }
-  const data = ticketDocData(withToken, docType);
+  const zakladData = ticketDocData(withToken, docType);
+  const data = cisla ? { ...zakladData, number: cisla.number, relatedNumber: cisla.relatedNumber } : zakladData;
   if (isWeb()) return runWebDocument(mode, docType, sid, data);
-  return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${ticket.code}.pdf`);
+  return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${cisla?.number ?? ticket.code}.pdf`);
 }
 
 export async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
@@ -131,12 +136,12 @@ export async function printTicket(ticket: TicketEx, serviceId?: string | null) {
   return runTicketDocument("print", "zakazkovy_list", ticket, serviceId);
 }
 
-export async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "diagnosticky_protokol", ticket, serviceId);
+export async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
+  return runTicketDocument("export", "diagnosticky_protokol", ticket, serviceId, cisla);
 }
 
-export async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId);
+export async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
+  return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId, cisla);
 }
 
 export async function printZapujcku(ticket: TicketEx, serviceId?: string | null) {

@@ -1976,8 +1976,9 @@ export default function Orders({
 
   /**
    * Diagnostický protokol z detailu reklamace. Diagnostika reklamace se
-   * zapisuje do napojené (původní) zakázky, takže se tiskne její protokol –
-   * stejný dokument jako z detailu zakázky, s tím, co je právě na obrazovce.
+   * zapisuje do napojené (původní) zakázky, takže se tiskne její protokol
+   * s tím, co je právě na obrazovce – s číslem reklamace v hlavičce a číslem
+   * zakázky jako „Původní zakázka“.
    */
   const tiskDiagnostikyReklamace = async (action: DocMode) => {
     const id = detailedClaim?.source_ticket_id;
@@ -1993,8 +1994,10 @@ export default function Orders({
       showToast("Reklamace zatím nemá diagnostiku.", "info");
       return;
     }
-    if (action === "print") await printDiagnosticProtocol(zakazka, activeServiceId);
-    else await exportDiagnosticProtocolToPDF(zakazka, activeServiceId);
+    // Číslo reklamace v hlavičce, původní zakázka pod ním (řádek „Původní zakázka“).
+    const cisla = detailedClaim?.code ? { number: detailedClaim.code, relatedNumber: zakazka.code ?? undefined } : undefined;
+    if (action === "print") await printDiagnosticProtocol(zakazka, activeServiceId, cisla);
+    else await exportDiagnosticProtocolToPDF(zakazka, activeServiceId, cisla);
   };
 
   /**

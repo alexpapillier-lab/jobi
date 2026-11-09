@@ -315,3 +315,19 @@ describe("výdejka reklamace", () => {
     expect(html).toContain("převzetí zařízení po vyřízení reklamace");
   });
 });
+
+describe("diagnostický protokol z reklamace", () => {
+  const args = { template: defaultTemplate("diagnosticky_protokol"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+
+  it("s číslem reklamace ukáže i původní zakázku", () => {
+    const html = renderDocument({ ...args, data: { ...sampleData("diagnosticky_protokol"), number: "R26000007", relatedNumber: "IRPAZ2600692" } });
+    expect(html).toContain("R26000007");
+    expect(html).toContain("Původní zakázka");
+    expect(html).toContain("IRPAZ2600692");
+  });
+
+  it("u běžné zakázky řádek Původní zakázka není", () => {
+    const html = renderDocument({ ...args, data: { ...sampleData("diagnosticky_protokol"), relatedNumber: undefined } });
+    expect(html).not.toContain("Původní zakázka");
+  });
+});

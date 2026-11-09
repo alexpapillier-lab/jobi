@@ -143,7 +143,8 @@ function zarucniList(): Template {
 function diagnostika(): Template {
   const t = base("diagnosticky_protokol");
   t.blocks = [
-    fields([row("Zákazník", "{{customer.name}}"), row("Zařízení", "{{device.name}}"), row("Sériové číslo / IMEI", "{{device.serialOrImei}}"), row("Stav při převzetí", "{{device.condition}}"), row("Přijato", "{{dates.received}}"), row("Diagnostika provedena", "{{dates.diagnosed}}")], "Zakázka"),
+    // „Původní zakázka“ jen u protokolu tištěného z reklamace (číslo dokladu je pak číslo reklamace); jinak je řádek prázdný a skryje se.
+    fields([row("Zákazník", "{{customer.name}}"), row("Zařízení", "{{device.name}}"), row("Sériové číslo / IMEI", "{{device.serialOrImei}}"), row("Stav při převzetí", "{{device.condition}}"), row("Přijato", "{{dates.received}}"), row("Diagnostika provedena", "{{dates.diagnosed}}"), row("Původní zakázka", "{{relatedNumber}}")], "Zakázka"),
     text("{{diagnostic}}", { title: "Zjištěný stav a závady", when: "notEmpty" }),
     { id: id("b"), type: "items", title: "Doporučený postup a cena", columns: ["name", "total"], showTotal: true, when: "notEmpty" },
     { id: id("b"), type: "photos", mode: "pages", when: "notEmpty" },
