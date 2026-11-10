@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import { supabase, supabaseUrl, supabaseFetch, resetTauriFetchState } from "../../../lib/supabaseClient";
 import { devLog, devWarn } from "../../../lib/devLog";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
@@ -338,7 +338,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     sloucitZDb,
   } = deps;
 
-  const createTicket = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
+  const vytvorZakazku = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
     const { newDraft, branch, customerMatchDecision, onSuccess, draftCaptureToken } = params;
 
     if (!activeServiceId || !supabase) {
@@ -520,6 +520,30 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       return false;
     }
   }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
+
+  /*
+   * Pojistka proti dvojímu založení. Založení trvá několik volání (zákazník,
+   * číslo, zápis, fotky) a na pomalé síti i pár sekund; tlačítko Vytvořit
+   * zatím zůstávalo aktivní, takže druhé kliknutí nebo ⌘/Ctrl+Enter založilo
+   * stejnou zakázku podruhé s dalším číslem (iSwap Praha IRP26000373/374,
+   * 10. 11. 2026). Dokud jedno založení běží, další se odmítne.
+   */
+  const zakladaSeRef = useRef(false);
+  const [zakladaSe, setZakladaSe] = useState(false);
+  const createTicket = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
+    if (zakladaSeRef.current) {
+      showToast("Zakázka se už zakládá – počkejte na dokončení.", "info");
+      return false;
+    }
+    zakladaSeRef.current = true;
+    setZakladaSe(true);
+    try {
+      return await vytvorZakazku(params);
+    } finally {
+      zakladaSeRef.current = false;
+      setZakladaSe(false);
+    }
+  }, [vytvorZakazku]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
     const { detailedTicket: zadanaZakazka, editedTicket, onSuccess, onConflict, onQueued, soubeh } = params;
@@ -892,6 +916,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   return {
     createTicket,
     saveTicketChanges,
+    /** Právě běží založení zakázky – tlačítko Vytvořit je mezitím vypnuté. */
+    zakladaSe,
   };
 }
 

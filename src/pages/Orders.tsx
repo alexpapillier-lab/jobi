@@ -931,7 +931,7 @@ export default function Orders({
     if (closeDetailWhen) zavriNovouReklamaci();
   }, [closeDetailWhen, zavriNovouReklamaci]);
 
-  const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
+  const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction, zakladaSe } = useOrderActions({
     activeServiceId,
     serviceName,
     userId: session?.user?.id ?? null,
@@ -2168,6 +2168,7 @@ export default function Orders({
         closeNewOrder={closeNewOrder}
         discardNewOrder={discardNewOrder}
         createTicket={createTicket}
+        zakladaSe={zakladaSe}
         canCreate={canCreate}
         submitAttempted={submitAttempted}
         createBlockedReason={createBlockedReason}

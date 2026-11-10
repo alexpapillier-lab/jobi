@@ -46,6 +46,8 @@ type Props = {
   closeNewOrder: () => void;
   discardNewOrder: () => void;
   createTicket: () => void;
+  /** Založení právě běží – tlačítko je vypnuté, aby nevznikla zakázka dvakrát. */
+  zakladaSe?: boolean;
   canCreate: boolean;
   submitAttempted: boolean;
   createBlockedReason: string | null;
@@ -112,6 +114,7 @@ export function NovaZakazkaPanel({
   closeNewOrder,
   discardNewOrder,
   createTicket,
+  zakladaSe = false,
   canCreate,
   submitAttempted,
   createBlockedReason,
@@ -767,8 +770,8 @@ export function NovaZakazkaPanel({
         <Button variant="soft" onClick={discardNewOrder} title="Zahodit rozpracovanou zakázku">
           Zrušit
         </Button>
-        <Button variant="primary" onClick={createTicket} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)" data-tour="nova-vytvorit">
-          Vytvořit zakázku
+        <Button variant="primary" onClick={createTicket} disabled={zakladaSe} aria-disabled={!canCreate || zakladaSe} title="Vytvořit zakázku (⌘/Ctrl+Enter)" data-tour="nova-vytvorit">
+          {zakladaSe ? "Zakládám…" : "Vytvořit zakázku"}
         </Button>
       </div>
     </div>
