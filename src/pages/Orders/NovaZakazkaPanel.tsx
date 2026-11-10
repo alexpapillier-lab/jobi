@@ -770,7 +770,7 @@ export function NovaZakazkaPanel({
         <Button variant="soft" onClick={discardNewOrder} title="Zahodit rozpracovanou zakázku">
           Zrušit
         </Button>
-        <Button variant="primary" onClick={createTicket} disabled={zakladaSe} aria-disabled={!canCreate || zakladaSe} title="Vytvořit zakázku (⌘/Ctrl+Enter)" data-tour="nova-vytvorit">
+        <Button variant="primary" onClick={createTicket} disabled={zakladaSe} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)" data-tour="nova-vytvorit">
           {zakladaSe ? "Zakládám…" : "Vytvořit zakázku"}
         </Button>
       </div>
