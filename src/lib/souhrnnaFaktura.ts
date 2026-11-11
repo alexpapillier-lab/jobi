@@ -317,6 +317,18 @@ function oriznout(text: string, max = MAX_NAZEV_POLOZKY): string {
   return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * Položka faktury z detailu zakázky: „iPhone 13 · Výměna displeje“. Model
+ * zařízení jde před název opravy (přání iSwapu – ve Fakturoidu byl jen popis
+ * opravy). Když ho název opravy už obsahuje, neopakuje se.
+ */
+export function nazevPolozkySModelem(model: string | null | undefined, nazev: string): string {
+  const m = (model ?? "").replace(/\s+/g, " ").trim();
+  const n = nazev.replace(/\s+/g, " ").trim();
+  if (!m || n.toLowerCase().includes(m.toLowerCase())) return oriznout(n);
+  return oriznout(`${m} · ${n}`);
+}
+
 /** „Zakázka SRV26000123“ – bez čísla jen „Zakázka“. */
 export function oznaceniZakazky(z: Pick<ZakazkaProSouhrn, "code">): string {
   return z.code?.trim() ? `Zakázka ${z.code.trim()}` : "Zakázka";

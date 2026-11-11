@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   MAX_NAZEV_POLOZKY,
+  nazevPolozkySModelem,
   cenaBezDph,
   datumVydaniZakazky,
   jeFiremniZakaznik,
@@ -249,5 +250,18 @@ describe("mapování z databáze", () => {
     expect(z.opravy).toEqual([{ name: "Displej", type: undefined, price: 1500, hodiny: null, sazba: null, technik: null }]);
     expect(z.discountType).toBeNull();
     expect(opravyZJsonu(null)).toEqual([]);
+  });
+});
+
+describe("položka faktury z detailu zakázky", () => {
+  it("model před názvem opravy", () => {
+    expect(nazevPolozkySModelem("iPhone 13", "Výměna displeje")).toBe("iPhone 13 · Výměna displeje");
+  });
+
+  it("model se neopakuje, když ho oprava už obsahuje; bez modelu jen oprava", () => {
+    expect(nazevPolozkySModelem("iPhone 13", "Výměna displeje iPhone 13")).toBe("Výměna displeje iPhone 13");
+    expect(nazevPolozkySModelem("", "Výměna baterie")).toBe("Výměna baterie");
+    expect(nazevPolozkySModelem(null, "Diagnostika")).toBe("Diagnostika");
+    expect(nazevPolozkySModelem("  Dyson  V11 ", "Čištění")).toBe("Dyson V11 · Čištění");
   });
 });

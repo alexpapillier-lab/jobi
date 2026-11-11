@@ -33,6 +33,7 @@ import {
   printWarranty,
 } from "./tiskZakazky";
 import { technikPrace } from "../../lib/rootOwner";
+import { nazevPolozkySModelem } from "../../lib/souhrnnaFaktura";
 
 type Props = {
   isNarrow: boolean;
@@ -488,7 +489,8 @@ export function DetailHlavicka({
                       branchId: t.branchId ?? null,
                       items: repairs.length > 0 ? repairs.map((r) => ({
                         // Hodinová práce jde na fakturu jako hodiny × sazba, ne 1 ks.
-                        name: r.type === "hourly" && technikPrace(r) ? `${r.name} (${technikPrace(r)})` : r.name,
+                        // Před opravu model zařízení: „iPhone 13 · Výměna displeje“.
+                        name: nazevPolozkySModelem(t.deviceLabel, r.type === "hourly" && technikPrace(r) ? `${r.name} (${technikPrace(r)})` : r.name),
                         qty: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? r.hodiny! : 1,
                         unit: r.type === "hourly" ? "h" : "ks",
                         unit_price: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? (r.sazba ?? 0) : (r.price ?? 0),
