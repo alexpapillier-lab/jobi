@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Button, Input, Pill, Segmented } from "./ui";
 import { showToast } from "./Toast";
 import { reportError } from "../lib/reportError";
-import { jdeZrusit, maStitek, objednatDpd, otevritStitek, sledovatDpd, stavDpdText, stitekDpd, zrusitDpd, type ObjednavkaDpd, type RezimDpd } from "../lib/prepravaDpd";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { jePracovniDenCz } from "../../supabase/functions/_shared/svatky";
+import { ChybaDpd, jdeZrusit, maStitek, objednatDpd, otevritStitek, sledovatDpd, stavDpdText, stitekDpd, zrusitDpd, type ObjednavkaDpd, type RezimDpd } from "../lib/prepravaDpd";
 
 /**
  * Přeprava DPD v detailu zásilky (Zásilky). Bez objednávky formulář
@@ -16,8 +18,9 @@ function nabidkaDnu(): Array<{ value: string; label: string }> {
   const d = new Date(`${fmt.format(new Date())}T12:00:00Z`);
   const out: Array<{ value: string; label: string }> = [];
   while (out.length < 6) {
-    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) {
-      const iso = d.toISOString().slice(0, 10);
+    const iso = d.toISOString().slice(0, 10);
+    // Víkendy i státní svátky DPD nesváží – v nabídce nejsou.
+    if (jePracovniDenCz(iso)) {
       out.push({ value: iso, label: d.toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric", month: "numeric", timeZone: "UTC" }) });
     }
     d.setUTCDate(d.getUTCDate() + 1);
@@ -47,6 +50,9 @@ export function PrepravaDpd({
   const [baliku, setBaliku] = useState("1");
   const [den, setDen] = useState("asap");
   const [pracuje, setPracuje] = useState<null | "create" | "label" | "track" | "cancel">(null);
+  /* DPD rušení svozů přes API občas dočasně vypne (403 PickupOrderCancellationDisabled).
+     Pak se svoz ruší v MojeDPD / telefonicky a v Jobi se jen označí. */
+  const [rucniZruseni, setRucniZruseni] = useState<{ pickupOrderId: string | null } | null>(null);
   const dny = useMemo(nabidkaDnu, []);
   const ziva = objednavka && objednavka.status !== "cancelled" ? objednavka : null;
 
@@ -111,11 +117,37 @@ export function PrepravaDpd({
             </Button>
           )}
           {jdeZrusit(ziva) && (
-            <Button size="sm" variant="ghost" disabled={!!pracuje} onClick={() => void akce("cancel", async () => { const varovani = await zrusitDpd(shipmentId); if (varovani) showToast(varovani, "error"); else showToast(ziva.pickupOrderId ? "Svoz u DPD zrušen." : "Objednávka zrušena. Štítek už nepoužívejte.", "success"); })}>
+            <Button size="sm" variant="ghost" disabled={!!pracuje} onClick={() => void akce("cancel", async () => {
+              try {
+                const varovani = await zrusitDpd(shipmentId);
+                if (varovani) showToast(varovani, "error");
+                else showToast(ziva.pickupOrderId ? "Svoz u DPD zrušen." : "Objednávka zrušena. Štítek už nepoužívejte.", "success");
+              } catch (e) {
+                if (e instanceof ChybaDpd && e.kod === "dpd_zruseni_nedostupne") {
+                  setRucniZruseni({ pickupOrderId: typeof e.data.pickupOrderId === "string" ? e.data.pickupOrderId : ziva.pickupOrderId });
+                  return;
+                }
+                throw e;
+              }
+            })}>
               {pracuje === "cancel" ? "Ruším…" : ziva.mode === "courier" ? "Zrušit svoz" : "Zrušit štítek"}
             </Button>
           )}
         </div>
+        <ConfirmDialog
+          open={!!rucniZruseni}
+          title="DPD teď rušení svozu neumožňuje"
+          message={`DPD má rušení svozů přes aplikace dočasně vypnuté. Zrušte svoz${rucniZruseni?.pickupOrderId ? ` č. ${rucniZruseni.pickupOrderId}` : ""} v MojeDPD (moje.dpd.cz) nebo na +420 225 373 373. Až bude zrušený, označte ho tady – Jobi už DPD volat nebude.`}
+          confirmLabel="Zrušeno v MojeDPD – označit"
+          cancelLabel="Zatím ne"
+          onCancel={() => setRucniZruseni(null)}
+          onConfirm={async () => {
+            await zrusitDpd(shipmentId, { rucne: true });
+            setRucniZruseni(null);
+            showToast("Svoz označen jako zrušený.", "success");
+            onZmena();
+          }}
+        />
       </div>
     );
   }

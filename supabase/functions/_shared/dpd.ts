@@ -23,6 +23,8 @@
  * adresy se pro kurýra už nepoužívá, ani když je pobočka u DPD registrovaná.
  */
 
+import { jePracovniDenCz } from "./svatky.ts";
+
 export type RezimDpd = "label" | "courier";
 export type VariantaDpd = "standard_shop" | "standard" | "return" | "collection";
 
@@ -224,9 +226,10 @@ export function dnySvozu(ted: Date = new Date(), pocet = 4): string[] {
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Prague", year: "numeric", month: "2-digit", day: "2-digit" });
   const d = new Date(`${fmt.format(ted)}T12:00:00Z`);
   const out: string[] = [];
+  // Víkendy i státní svátky se přeskakují (DPD ve svátek nesváží).
   while (out.length < pocet) {
-    const den = d.getUTCDay();
-    if (den !== 0 && den !== 6) out.push(d.toISOString().slice(0, 10));
+    const den = d.toISOString().slice(0, 10);
+    if (jePracovniDenCz(den)) out.push(den);
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return out;

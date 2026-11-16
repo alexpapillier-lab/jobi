@@ -6,6 +6,8 @@
  *   { action: "label",  shipmentId }   → PDF štítek (base64)
  *   { action: "track",  shipmentId }   → stav z DPD trackingu
  *   { action: "cancel", shipmentId }   → zruší svoz u DPD (kurýr) a objednávku
+ *   { action: "cancel", shipmentId, rucne: true } → svoz už je zrušený v MojeDPD
+ *                                        nebo telefonicky; jen se označí v Jobi
  * Z cronu (preprava_dpd_tick, tajemství z Vaultu):
  *   { secret, action: "track_all" }    → projde rozjeté balíky
  *
@@ -49,7 +51,7 @@ type Svc = SupabaseClient<any, any, any>;
 type Dpd = { base: string; key: string; dsw: string; testovaci: boolean };
 
 class Chyba extends Error {
-  constructor(message: string, public status = 400) {
+  constructor(message: string, public status = 400, public extra: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -273,7 +275,7 @@ async function sledovatVse(svc: Svc) {
 }
 
 // ── cancel ──────────────────────────────────────────────────────────────────
-async function zrusit(svc: Svc, uid: string, shipmentId: string) {
+async function zrusit(svc: Svc, uid: string, shipmentId: string, rucne = false) {
   const o = await zivaObjednavka(svc, shipmentId);
   if (!o) throw new Chyba("K zásilce není objednaná přeprava.", 404);
   if (o.status === "delivered") throw new Chyba("Balík je už doručený – přepravu nejde zrušit.");
@@ -284,17 +286,29 @@ async function zrusit(svc: Svc, uid: string, shipmentId: string) {
   // nesmíme vydávat za potvrzené zrušení: vrací se varování a uloží se do
   // stavu objednávky.
   let varovani: string | null = null;
-  if (o.pickup_order_id) {
+  if (o.pickup_order_id && rucne) {
+    // Uživatel svoz zrušil sám (MojeDPD, telefon) – DPD se nevolá.
+    varovani = null;
+  } else if (o.pickup_order_id) {
     const dpd = await ucetDpd(svc, o.service_id);
     const res = await dpdFetch(dpd, `/pickup-orders/${encodeURIComponent(o.pickup_order_id)}`, { method: "DELETE" });
     if (res.status === 404) {
       varovani = `DPD svoz č. ${o.pickup_order_id} nenašlo, takže zrušení nepotvrdilo. Ověřte v MojeDPD, že kurýr nepřijede.`;
+    } else if (res.status === 403) {
+      // PickupOrderCancellationDisabled: DPD rušení přes API dočasně vypnulo
+      // (dokumentace: „Do not retry“). Zrušit jde jen v MojeDPD nebo telefonicky;
+      // aplikace pak nabídne ruční označení (rucne: true).
+      throw new Chyba(
+        `DPD teď rušení svozů přes aplikaci neumožňuje. Zrušte svoz č. ${o.pickup_order_id} v MojeDPD nebo na +420 225 373 373 a pak ho v Jobi označte jako zrušený.`,
+        409,
+        { code: "dpd_zruseni_nedostupne", pickupOrderId: o.pickup_order_id },
+      );
     } else if (!res.ok) {
       throw new Chyba(`Svoz se u DPD zrušit nepodařilo – ${await textChybyDpd(res)}`, 502);
     }
   }
   const { data } = await svc.from("ticket_shipment_dpd")
-    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_by: uid, ...(varovani ? { status_text: varovani } : {}) })
+    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_by: uid, ...(varovani ? { status_text: varovani } : rucne && o.pickup_order_id ? { status_text: `Svoz č. ${o.pickup_order_id} zrušen mimo Jobi (MojeDPD / telefon).` } : {}) })
     .eq("id", o.id).select(SLOUPCE).single();
   await svc.from("ticket_shipments").update({ tracking_number: null }).eq("id", shipmentId);
   return json({ ok: true, objednavka: data, varovani });
@@ -330,11 +344,11 @@ serve(async (req) => {
         if (!o) throw new Chyba("K zásilce není objednaná přeprava.", 404);
         return json({ ok: true, objednavka: await sledovat(svc, o) });
       }
-      case "cancel": return await zrusit(svc, uid, shipmentId);
+      case "cancel": return await zrusit(svc, uid, shipmentId, body.rucne === true);
       default: return json({ error: "Neznámá akce" }, 400);
     }
   } catch (e) {
-    if (e instanceof Chyba) return json({ error: e.message }, e.status);
+    if (e instanceof Chyba) return json({ error: e.message, ...e.extra }, e.status);
     console.error("[zasilka-dpd]", e);
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

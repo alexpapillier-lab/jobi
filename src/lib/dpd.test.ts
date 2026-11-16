@@ -119,8 +119,8 @@ describe("zásilka DPD", () => {
   });
 
   it("dny svozu: dnešek a pracovní dny v pražském čase", () => {
-    // Pátek 23. 10. 2026 v 23:30 UTC = sobota 24. 10. v Praze.
-    expect(dnySvozu(new Date("2026-10-23T23:30:00Z"))).toEqual(["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"]);
+    // Pátek 23. 10. 2026 v 23:30 UTC = sobota 24. 10. v Praze. 28. 10. je svátek.
+    expect(dnySvozu(new Date("2026-10-23T23:30:00Z"))).toEqual(["2026-10-26", "2026-10-27", "2026-10-29", "2026-10-30"]);
     expect(dnySvozu(new Date("2026-10-21T08:00:00Z"), 2)).toEqual(["2026-10-21", "2026-10-22"]);
   });
 });

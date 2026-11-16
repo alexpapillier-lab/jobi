@@ -106,6 +106,13 @@ export async function nactiObjednavkyDpd(serviceId: string): Promise<Map<string,
   return out;
 }
 
+/** Chyba z funkce zasilka-dpd se strojovým kódem (např. „dpd_zruseni_nedostupne“). */
+export class ChybaDpd extends Error {
+  constructor(message: string, public kod: string | null, public data: Record<string, unknown> = {}) {
+    super(message);
+  }
+}
+
 async function token(): Promise<string> {
   if (!supabase) throw new Error("Není připojení k databázi.");
   const { data } = await supabase.auth.getSession();
@@ -123,8 +130,8 @@ async function zavolej<T>(body: Record<string, unknown>): Promise<T> {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}`, apikey: supabaseAnonKey },
     body: JSON.stringify(body),
   });
-  const d = (await r.json().catch(() => ({}))) as { error?: string } & T;
-  if (!r.ok) throw new Error(d.error ?? `Server odpověděl ${r.status}.`);
+  const d = (await r.json().catch(() => ({}))) as { error?: string; code?: string } & T;
+  if (!r.ok) throw new ChybaDpd(d.error ?? `Server odpověděl ${r.status}.`, d.code ?? null, d as Record<string, unknown>);
   return d;
 }
 
@@ -138,9 +145,14 @@ export async function sledovatDpd(shipmentId: string): Promise<ObjednavkaDpd> {
   return mapObjednavka(d.objednavka);
 }
 
-/** Vrací varování, když DPD zrušení svozu nepotvrdilo (svoz nenašlo); jinak null. */
-export async function zrusitDpd(shipmentId: string): Promise<string | null> {
-  const d = await zavolej<{ varovani?: string | null }>({ action: "cancel", shipmentId });
+/**
+ * Vrací varování, když DPD zrušení svozu nepotvrdilo (svoz nenašlo); jinak null.
+ * `rucne`: svoz už je zrušený v MojeDPD nebo telefonicky – DPD se nevolá.
+ * Když DPD rušení přes API dočasně neumožňuje, hází ChybaDpd s kódem
+ * „dpd_zruseni_nedostupne“ (a pickupOrderId v datech).
+ */
+export async function zrusitDpd(shipmentId: string, v: { rucne?: boolean } = {}): Promise<string | null> {
+  const d = await zavolej<{ varovani?: string | null }>({ action: "cancel", shipmentId, ...(v.rucne ? { rucne: true } : {}) });
   return d.varovani ?? null;
 }
 
