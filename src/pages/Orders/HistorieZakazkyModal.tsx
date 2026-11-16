@@ -103,6 +103,11 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
               handoff_method: "Převzetí",
               handback_method: "Předání",
               diagnostic_photos: "Fotky diagnostiky",
+              diagnostic_photos_before: "Fotky při příjmu",
+              transit_shipment_id: "Zásilka",
+              location_branch_id: "Kde zakázka je",
+              intake_consent: "Souhlas s podmínkami",
+              find_my_off: "Najít (Find My) vypnuto",
               expected_completion_at: "Předpokládané dokončení",
               completed_at: "Dokončeno",
               warranty_until: "Záruka na opravu do",
@@ -130,9 +135,15 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
                 return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${formatCurrency(r.price)})` : ""}`).join(", ") || "—";
               }
               if (key === "discount" && val && typeof val === "object" && !Array.isArray(val)) {
-                const o = val as { type?: string; value?: number };
-                return [o.type, typeof o.value === "number" ? `${o.value} Kč` : ""].filter(Boolean).join(" · ") || "—";
+                const o = val as { type?: string | null; value?: number | null };
+                if (!o.type || typeof o.value !== "number") return "bez slevy";
+                return o.type === "percentage" ? `${o.value} %` : formatCurrency(o.value);
               }
+              if ((key === "diagnostic_photos" || key === "diagnostic_photos_before") && Array.isArray(val)) return `${val.length} ${val.length === 1 ? "fotka" : val.length >= 2 && val.length <= 4 ? "fotky" : "fotek"}`;
+              if (key === "transit_shipment_id") return val ? "na cestě" : "nepřepravuje se";
+              if (key === "location_branch_id") return val ? getCachedBranch(activeServiceId ?? undefined, String(val))?.name ?? "jiná pobočka" : "na své pobočce";
+              if (key === "intake_consent") return val ? "odsouhlaseno" : "—";
+              if (key === "find_my_off") return val === true ? "ano" : val === false ? "ne" : "—";
               // Strukturované sloupce: krátké shrnutí místo JSON.
               if (key === "test_checklist" && val && typeof val === "object") {
                 const k = val as { sablonaNazev?: string; polozky?: Array<{ stav?: string | null }> };
@@ -195,10 +206,15 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
             return (
               <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {entries.map((e) => {
-                  const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action === "warranty_claim_created" ? "Založena reklamace" : e.action === "created_from_warranty_claim" ? "Vzniklo z reklamace" : e.action;
-                  const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
+                  const detail = (e.details ?? {}) as Record<string, unknown>;
+                  const preprava = e.action === "preprava";
+                  const actionLabel = preprava ? String(detail.titulek ?? "Přeprava") : e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action === "warranty_claim_created" ? "Založena reklamace" : e.action === "created_from_warranty_claim" ? "Vzniklo z reklamace" : e.action;
+                  // Doručení a stav ze sledování nemají autora – zapsalo je DPD.
+                  const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : preprava ? (String(detail.titulek ?? "").startsWith("DPD") ? "DPD" : "—") : "Systém");
                   const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
                   const statusChange = changes.find((c) => c.label === "Stav");
+                  // Co se upravilo, je vidět hned – bez rozbalování „Detail změn“.
+                  const zmenenaPole = [...new Set(changes.map((c) => c.label).filter((l) => l !== "Stav"))];
                   const isExpanded = expandedId === e.id;
                   return (
                     <li key={e.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
@@ -212,6 +228,10 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
                               </span>
                             )}
                           </div>
+                          {zmenenaPole.length > 0 && (
+                            <div style={{ marginTop: 2 }}>{zmenenaPole.join(", ")}</div>
+                          )}
+                          {preprava && detail.popis ? <div style={{ marginTop: 2 }}>{String(detail.popis)}</div> : null}
                           <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
                           {(e.action === "warranty_claim_created" || e.action === "created_from_warranty_claim") && (e.details as Record<string, unknown>)?.warranty_claim_code != null && (
                             <div style={{ marginTop: 4 }}>Reklamace {String((e.details as Record<string, unknown>).warranty_claim_code)}</div>

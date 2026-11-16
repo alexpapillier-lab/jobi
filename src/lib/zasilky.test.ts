@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisloZasilky, druhaPobocka, stavZasilkyText, historieZasilky, htmlProtokolu, pohybZakazkyVZasilce, jeMimoPobocku, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
+import { cisloZasilky, druhaPobocka, stavZasilkyText, historiePrepravy, historieZasilky, htmlProtokolu, pohybZakazkyVZasilce, jeMimoPobocku, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
 
 const nazev = (id: string) => ({ b: "Brno", p: "Praha" }[id] ?? id);
 
@@ -244,5 +244,39 @@ describe("pohyb zakázky v zásilce", () => {
   it("storno zásilky", () => {
     const z = zas({ status: "cancelled", cancelledAt: "2026-09-10T12:00:00Z", cancelledBy: "u5", polozky: [polozka("a")] });
     expect(pohybZakazkyVZasilce(z, "a").at(-1)).toEqual({ kdy: "2026-09-10T12:00:00Z", text: "Zásilka stornována", kdo: "u5" });
+  });
+});
+
+describe("přeprava v historii zakázky", () => {
+  const polozka = { id: "i", shipmentId: "z", ticketId: "t", addedAt: "2026-11-10T09:00:00Z", addedBy: "u1", receivedAt: "2026-11-11T10:00:00Z", receivedBy: "u3", note: "" };
+  const z: Zasilka = {
+    id: "z", serviceId: "s", cislo: 12, fromBranchId: "b", toBranchId: "p", status: "received", carrier: "DPD", trackingNumber: "", note: "",
+    createdBy: "u1", createdAt: "2026-11-10T08:00:00Z", sentBy: "u2", sentAt: "2026-11-10T15:00:00Z", receivedBy: "u3", receivedAt: "2026-11-11T10:00:00Z", cancelledAt: null, cancelledBy: null,
+    polozky: [polozka],
+  };
+  const dpd = {
+    id: "d", shipmentId: "z", mode: "courier" as const, status: "delivered", statusText: "Doručeno", pickupDate: "2026-11-10", parcelNumbers: ["1234"],
+    createdAt: "2026-11-10T14:00:00Z", createdBy: "u2", cancelledAt: null, cancelledBy: null, deliveredAt: "2026-11-11T09:30:00Z", trackingAt: "2026-11-11T09:45:00Z",
+  };
+
+  it("pohyb v zásilce a DPD od nejnovějšího, s trasou a autorem", () => {
+    const h = historiePrepravy("t", [z], [dpd], nazev);
+    expect(h.map((x) => x.titulek)).toEqual(["Převzata na pobočce Praha", "DPD: doručeno", "Odeslána v zásilce", "DPD: objednán kurýr na 10. 11.", "Přidána do zásilky"]);
+    expect(h[0]).toMatchObject({ popis: "Z-0012 · Brno → Praha", kdo: "u3" });
+    expect(h.find((x) => x.titulek.startsWith("DPD: objednán"))).toMatchObject({ popis: "Z-0012 · Brno → Praha · balík 1234", kdo: "u2" });
+  });
+
+  it("na cestě: poslední stav ze sledování; zrušená objednávka", () => {
+    const naCeste = { ...dpd, status: "in_transit", statusText: "Na depu Brno", deliveredAt: null };
+    expect(historiePrepravy("t", [z], [naCeste], nazev).find((x) => x.titulek === "DPD: poslední stav ze sledování")?.popis).toBe("Na depu Brno · balík 1234");
+    const zrusena = { ...dpd, mode: "label" as const, status: "cancelled", deliveredAt: null, cancelledAt: "2026-11-10T14:30:00Z", cancelledBy: "u4" };
+    const h = historiePrepravy("t", [z], [zrusena], nazev);
+    expect(h.find((x) => x.titulek === "DPD: přeprava zrušena")).toMatchObject({ kdo: "u4" });
+    expect(h.some((x) => x.titulek === "DPD: vytvořen štítek")).toBe(true);
+    expect(h.some((x) => x.titulek.includes("sledování"))).toBe(false);
+  });
+
+  it("zakázka, která v zásilce není, nemá v historii žádný pohyb", () => {
+    expect(historiePrepravy("jina", [z], [], nazev)).toEqual([]);
   });
 });

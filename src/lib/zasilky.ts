@@ -181,6 +181,78 @@ export function pohybZakazkyVZasilce(z: Zasilka, ticketId: string): UdalostZasil
   return out.sort((a, b) => a.kdy.localeCompare(b.kdy));
 }
 
+/** Řádek historie zakázky o přepravě (zásilka mezi pobočkami, DPD). */
+export type UdalostPrepravy = { id: string; kdy: string; titulek: string; popis: string; kdo: string | null };
+
+/** Co z objednávky DPD jde do historie – podmnožina ObjednavkaDpd (lib/prepravaDpd). */
+export type DpdProHistorii = {
+  id: string;
+  shipmentId: string;
+  mode: "label" | "courier";
+  status: string;
+  statusText: string | null;
+  pickupDate: string | null;
+  parcelNumbers: string[];
+  createdAt: string;
+  createdBy: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  deliveredAt: string | null;
+  trackingAt: string | null;
+};
+
+const datumKratce = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" });
+
+/**
+ * Přeprava v historii zakázky: pohyb zakázky v zásilkách (přidání, odeslání,
+ * převzetí, storno) a objednávky DPD (objednání, zrušení, doručení a poslední
+ * stav ze sledování). Jednotlivé události sledování DPD Jobi neukládá, jen
+ * poslední známý stav – víc se ukázat nedá.
+ */
+export function historiePrepravy(
+  ticketId: string,
+  zasilky: readonly Zasilka[],
+  dpd: readonly DpdProHistorii[],
+  nazevPobocky: (id: string) => string,
+): UdalostPrepravy[] {
+  const out: UdalostPrepravy[] = [];
+  for (const z of zasilky) {
+    const trasa = `${cisloZasilky(z)} · ${nazevPobocky(z.fromBranchId)} → ${nazevPobocky(z.toBranchId)}`;
+    for (const [i, e] of pohybZakazkyVZasilce(z, ticketId).entries()) {
+      const titulek =
+        e.text === "Přidána do zásilky" ? "Přidána do zásilky"
+        : e.text === "Odeslána" ? "Odeslána v zásilce"
+        : e.text === "Převzata" ? `Převzata na pobočce ${nazevPobocky(z.toBranchId)}`
+        : e.text;
+      out.push({ id: `zasilka:${z.id}:${i}`, kdy: e.kdy, titulek, popis: trasa, kdo: e.kdo });
+    }
+    for (const o of dpd.filter((x) => x.shipmentId === z.id)) {
+      const baliky = o.parcelNumbers.length ? ` · balík ${o.parcelNumbers.join(", ")}` : "";
+      const objednano = o.mode === "courier" ? `DPD: objednán kurýr${o.pickupDate ? ` na ${datumKratce(o.pickupDate)}` : ""}` : "DPD: vytvořen štítek";
+      out.push({ id: `dpd:${o.id}:objednano`, kdy: o.createdAt, titulek: objednano, popis: `${trasa}${baliky}`, kdo: o.createdBy });
+      if (o.cancelledAt) out.push({ id: `dpd:${o.id}:zruseno`, kdy: o.cancelledAt, titulek: "DPD: přeprava zrušena", popis: trasa, kdo: o.cancelledBy });
+      if (o.deliveredAt) {
+        out.push({ id: `dpd:${o.id}:doruceno`, kdy: o.deliveredAt, titulek: "DPD: doručeno", popis: `${trasa}${baliky}`, kdo: null });
+      } else if (o.trackingAt && o.status === "in_transit") {
+        out.push({ id: `dpd:${o.id}:sledovani`, kdy: o.trackingAt, titulek: "DPD: poslední stav ze sledování", popis: `${o.statusText ?? "na cestě"}${baliky}`, kdo: null });
+      }
+    }
+  }
+  return out.sort((a, b) => b.kdy.localeCompare(a.kdy));
+}
+
+/** Zásilky, ve kterých zakázka kdy byla (i stornované a koncepty). */
+export async function nactiZasilkyZakazky(ticketId: string): Promise<Zasilka[]> {
+  if (!supabase) return [];
+  const { data: polozky, error } = await (supabase.from("ticket_shipment_items") as any).select("shipment_id").eq("ticket_id", ticketId);
+  if (error) throw new Error(error.message);
+  const ids = [...new Set(((polozky ?? []) as { shipment_id: string }[]).map((p) => p.shipment_id))];
+  if (ids.length === 0) return [];
+  const { data, error: e2 } = await (supabase.from("ticket_shipments") as any).select(SELECT).in("id", ids);
+  if (e2) throw new Error(e2.message);
+  return ((data ?? []) as Record<string, unknown>[]).map(mapZasilka);
+}
+
 /** Kolik položek zásilky chybí (odeslána, ale nepřevzatá). */
 export function nepreveztePolozky(z: Zasilka): ZasilkaPolozka[] {
   return z.status === "draft" || z.status === "cancelled" ? [] : z.polozky.filter((p) => !p.receivedAt);

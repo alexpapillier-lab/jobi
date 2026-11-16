@@ -37,7 +37,7 @@ export type NastaveniDpd = { serviceId: string; zapnuto: boolean; dsw: string | 
 
 const SLOUPCE = "id, shipment_id, mode, varianta, parcels, testovaci, parcel_numbers, pickup_order_id, pickup_date, status, status_text, delivered_at, tracking_at, created_at, created_by, cancelled_at, cancelled_by";
 
-function mapObjednavka(r: Record<string, any>): ObjednavkaDpd {
+export function mapObjednavka(r: Record<string, any>): ObjednavkaDpd {
   return {
     id: String(r.id),
     shipmentId: String(r.shipment_id),
@@ -180,4 +180,12 @@ export function maStitek(o: Pick<ObjednavkaDpd, "varianta" | "mode">): boolean {
 /** Zrušit jde jen dokud se balík nehnul. */
 export function jdeZrusit(o: Pick<ObjednavkaDpd, "status">): boolean {
   return o.status === "created" || o.status === "pickup_ordered";
+}
+
+/** Všechny objednávky DPD k zásilkám (i zrušené) – pro historii zakázky. */
+export async function nactiObjednavkyDpdZasilek(shipmentIds: string[]): Promise<ObjednavkaDpd[]> {
+  if (!supabase || shipmentIds.length === 0) return [];
+  const { data, error } = await (supabase.from("ticket_shipment_dpd") as any).select(SLOUPCE).in("shipment_id", shipmentIds).order("created_at");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, any>[]).map(mapObjednavka);
 }
