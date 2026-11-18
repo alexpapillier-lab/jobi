@@ -1995,7 +1995,9 @@ export default function Orders({
       return;
     }
     // Číslo reklamace v hlavičce, původní zakázka pod ním (řádek „Původní zakázka“).
-    const cisla = detailedClaim?.code ? { number: detailedClaim.code, relatedNumber: zakazka.code ?? undefined } : undefined;
+    const cisla = detailedClaim?.code
+      ? { number: detailedClaim.code, relatedNumber: zakazka.code ?? undefined, prijato: detailedClaim.received_at ?? detailedClaim.created_at }
+      : undefined;
     if (action === "print") await printDiagnosticProtocol(zakazka, activeServiceId, cisla);
     else await exportDiagnosticProtocolToPDF(zakazka, activeServiceId, cisla);
   };

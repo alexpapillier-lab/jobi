@@ -93,10 +93,27 @@ export const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = 
 };
 
 /**
+ * Kdy se diagnostika zakázky naposledy změnila (z historie zakázky).
+ * Dřív se na protokol dávalo „dnes“, takže každý tisk ukázal jiné datum
+ * a u reklamace to s datem přijetí vůbec nesedělo. Bez záznamu v historii
+ * (starší nebo importované zakázky) vrací undefined a řádek se skryje.
+ */
+export async function nactiDatumDiagnostiky(ticketId: string): Promise<string | undefined> {
+  if (!supabase) return undefined;
+  try {
+    const { data } = await (supabase as any).from("ticket_history").select("created_at, details").eq("ticket_id", ticketId).order("created_at", { ascending: false }).limit(300);
+    const radky = (data ?? []) as Array<{ created_at: string; details: { changes?: Record<string, unknown> } | null }>;
+    return radky.find((r) => r.details?.changes && typeof r.details.changes === "object" && "diagnostic_text" in r.details.changes)?.created_at;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * `cisla` přepíše číslo dokladu – diagnostický protokol tištěný z reklamace
  * nese číslo reklamace a číslo zakázky jako „Původní zakázka“.
  */
-export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
+export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string; prijato?: string }) {
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast(mode === "print" ? "Vyberte servis pro tisk." : "Vyberte servis pro export.", "error");
@@ -123,7 +140,13 @@ export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint,
     }
   }
   const zakladData = ticketDocData(withToken, docType);
-  const data = cisla ? { ...zakladData, number: cisla.number, relatedNumber: cisla.relatedNumber } : zakladData;
+  let data = cisla ? { ...zakladData, number: cisla.number, relatedNumber: cisla.relatedNumber } : zakladData;
+  if (docType === "diagnosticky_protokol") {
+    // „Přijato“ u reklamace = přijetí reklamace (ne založení původní zakázky);
+    // „Diagnostika provedena“ = poslední úprava diagnostiky, ne den tisku.
+    const diagnosed = ticket.diagnosticText ? await nactiDatumDiagnostiky(ticket.id) : undefined;
+    data = { ...data, dates: { ...data.dates, ...(cisla?.prijato ? { received: cisla.prijato } : {}), diagnosed } };
+  }
   if (isWeb()) return runWebDocument(mode, docType, sid, data);
   return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${cisla?.number ?? ticket.code}.pdf`);
 }
@@ -136,11 +159,11 @@ export async function printTicket(ticket: TicketEx, serviceId?: string | null) {
   return runTicketDocument("print", "zakazkovy_list", ticket, serviceId);
 }
 
-export async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
+export async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string; prijato?: string }) {
   return runTicketDocument("export", "diagnosticky_protokol", ticket, serviceId, cisla);
 }
 
-export async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string }) {
+export async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null, cisla?: { number: string; relatedNumber?: string; prijato?: string }) {
   return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId, cisla);
 }
 
