@@ -246,7 +246,7 @@ export function poDnech(pohyby: readonly PohybPokladny[]): DenPokladny[] {
 
 /** Kategorie k nabídce: naposledy použité nahoře, pak výchozí. */
 export const VYCHOZI_KATEGORIE_VYDAJU = ["Díly", "Poštovné", "Kancelář", "Úklid", "Občerstvení", "Doprava"];
-export const VYCHOZI_KATEGORIE_PRIJMU = ["Prodej příslušenství", "Drobný prodej", "Ostatní"];
+export const VYCHOZI_KATEGORIE_PRIJMU = ["Dýško", "Prodej příslušenství", "Drobný prodej", "Ostatní"];
 
 export function kategorieKNabidce(pohyby: readonly PohybPokladny[], druh: "prijem" | "vydej", max = 10): string[] {
   const out: string[] = [];

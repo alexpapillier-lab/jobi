@@ -89,7 +89,8 @@ function Chyba({ text }: { text: string | null }) {
 // Platba
 // ---------------------------------------------------------------------------
 
-export type VysledekPlatby = { castka: number; zaokrouhleni: number; zpusob: ZpusobPlatby; zaloha: boolean };
+/** `dysko`: co zákazník nechal navíc (zapíše se zvlášť jako příjem „Dýško“); 0 = nic. */
+export type VysledekPlatby = { castka: number; zaokrouhleni: number; zpusob: ZpusobPlatby; zaloha: boolean; dysko: number };
 
 /**
  * Platba zakázky nebo faktury. Hotově: na celé koruny (podle nastavení)
@@ -116,6 +117,7 @@ export function PlatbaOkno({
   const [zaloha, setZaloha] = useState(false);
   const [castkaText, setCastkaText] = useState("");
   const [dalText, setDalText] = useState("");
+  const [dyskoText, setDyskoText] = useState("");
   const [pracuji, setPracuji] = useState(false);
   const [chyba, setChyba] = useState<string | null>(null);
 
@@ -126,7 +128,10 @@ export function PlatbaOkno({
   const zaklad = zaloha || bezCeny ? zadana : zbyva;
   const zaokr = zaklad !== null && zpusob === "cash" && zaokrouhlovat ? zaokrouhliHotovost(zaklad) : zaklad !== null ? { castka: zaklad, zaokrouhleni: 0 } : null;
   const dal = dalText.trim() ? ctiCastku(dalText) : null;
-  const vratit = zaokr ? kolikVratit(zaokr.castka, dal) : null;
+  const dysko = dyskoText.trim() ? ctiCastku(dyskoText) ?? 0 : 0;
+  // Zbytek po zaplacení, než se vezme dýško; „Vrátit“ je až to, co zbyde po dýšku.
+  const zbytek = zaokr ? kolikVratit(zaokr.castka, dal) : null;
+  const vratit = zaokr ? kolikVratit(zaokr.castka + dysko, dal) : null;
 
   // Rychlé volby „zákazník dal“: přesně a nejbližší vyšší částky v bankovkách.
   const navrhy: number[] = [];
@@ -144,11 +149,13 @@ export function PlatbaOkno({
   const potvrdit = async () => {
     if (pracuji) return;
     if (!zaokr || zaokr.castka <= 0) { setChyba(zaloha ? "Zadejte výši zálohy." : "Zadejte částku."); return; }
+    if (dyskoText.trim() && ctiCastku(dyskoText) === null) { setChyba("Dýško není platná částka."); return; }
+    if (zpusob === "cash" && dal !== null && vratit === null && zbytek !== null) { setChyba("Dýško je víc než to, co zákazník dal navíc."); return; }
     if (zaloha && zaokr.castka >= zbyva && zbyva > 0) { setChyba("Záloha je stejná nebo vyšší než cena – zaplaťte celou částku."); return; }
     setPracuji(true);
     setChyba(null);
     try {
-      await onPotvrdit({ castka: zaokr.castka, zaokrouhleni: zaokr.zaokrouhleni, zpusob, zaloha });
+      await onPotvrdit({ castka: zaokr.castka, zaokrouhleni: zaokr.zaokrouhleni, zpusob, zaloha, dysko });
     } catch (e) {
       setChyba(e instanceof Error ? e.message : "Platbu se nepodařilo zapsat.");
       setPracuji(false);
@@ -196,7 +203,26 @@ export function PlatbaOkno({
               <span style={{ fontSize: 24, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>{kc(vratit)}</span>
             </div>
           )}
-          {dal !== null && vratit === null && <div style={{ fontSize: 13, color: "var(--danger-text, var(--danger))" }}>Zákazník dal méně, než je k zaplacení.</div>}
+          {dal !== null && zbytek === null && <div style={{ fontSize: 13, color: "var(--danger-text, var(--danger))" }}>Zákazník dal méně, než je k zaplacení.</div>}
+          {dal !== null && zbytek !== null && vratit === null && <div style={{ fontSize: 13, color: "var(--danger-text, var(--danger))" }}>Dýško je víc než to, co zákazník dal navíc.</div>}
+        </div>
+      )}
+
+      {/* Dýško: zákazník nechá zbytek (nebo zaplatí kartou víc) – zapíše se zvlášť, ať sedí hotovost i tržba za zakázku. */}
+      {zaokr && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)", fontWeight: 700 }}>
+            Dýško
+            <span style={{ width: 120, display: "inline-block" }}>
+              <Input value={dyskoText} onChange={(e) => setDyskoText(e.target.value)} inputMode="decimal" placeholder="0" aria-label="Dýško" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void potvrdit(); } }} />
+            </span>
+            <span style={{ fontWeight: 600 }}>Kč</span>
+          </label>
+          {zpusob === "cash" && zbytek !== null && zbytek > 0 && dysko === 0 && (
+            <button type="button" onClick={() => setDyskoText(String(zbytek))} style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              Zbytek {kc(zbytek)} jako dýško
+            </button>
+          )}
         </div>
       )}
 
@@ -212,7 +238,7 @@ export function PlatbaOkno({
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <Button variant="ghost" onClick={onClose}>Zrušit</Button>
         <Button variant="primary" size="lg" onClick={() => void potvrdit()} disabled={pracuji}>
-          {pracuji ? "Zapisuji…" : zaloha ? `Přijmout zálohu${zaokr ? ` ${kc(zaokr.castka)}` : ""}` : `Zaplaceno${zaokr ? ` ${kc(zaokr.castka)}` : ""}`}
+          {pracuji ? "Zapisuji…" : zaloha ? `Přijmout zálohu${zaokr ? ` ${kc(zaokr.castka)}` : ""}` : `Zaplaceno${zaokr ? ` ${kc(zaokr.castka)}` : ""}`}{dysko > 0 ? ` + dýško ${kc(dysko)}` : ""}
         </Button>
       </div>
       {zakazka && !zaloha && stavPoPlatbe && (

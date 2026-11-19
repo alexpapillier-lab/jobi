@@ -271,13 +271,21 @@ export default function Pokladna({ activeServiceId, nastaveni, aktivni, onOpenTi
       zaokrouhleni: v.zaokrouhleni,
     });
     setHledat("");
+    const co = polozka.kod || polozka.nazev;
+    // Dýško je zvlášť příjem, ať platba zakázky sedí na cenu a hotovost v šuplíku na peníze.
+    if (v.dysko > 0) {
+      try {
+        await zapisPohyb({ pokladnaId: vybrana.id, druh: "prijem", castka: v.dysko, zpusob: v.zpusob, kategorie: "Dýško", popis: co });
+      } catch (e) {
+        showToast(`Platba zapsána, ale dýško ${kc(v.dysko)} ne: ${e instanceof Error ? e.message : "chyba"}. Zapište ho ručně jako příjem.`, "error");
+      }
+    }
     await poZapisu();
     void nactiKZ();
-    const co = polozka.kod || polozka.nazev;
     // Vydání: jen celá platba zakázky, která ještě není v koncovém stavu.
     const meni = !v.zaloha && polozka.ticketId && cilovyStav && polozka.stav !== cilovyStav && !(polozka.stav && getByKey(polozka.stav)?.isFinal);
     if (!meni) {
-      showToast(`${v.zaloha ? "Záloha" : "Zaplaceno"} ${kc(v.castka)} · ${co}`, "success");
+      showToast(`${v.zaloha ? "Záloha" : "Zaplaceno"} ${kc(v.castka)}${v.dysko > 0 ? ` + dýško ${kc(v.dysko)}` : ""} · ${co}`, "success");
       return;
     }
     const nazevStavu = getByKey(cilovyStav!)?.label ?? cilovyStav!;
