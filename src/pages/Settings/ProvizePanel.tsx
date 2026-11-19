@@ -133,7 +133,14 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [formStatusy, setFormStatusy] = useState<string[]>([]);
   const [clenove, setClenove] = useState<Clen[]>([]);
   const souborRef = useRef<HTMLInputElement>(null);
-  const seznamRef = useRef<HTMLDivElement>(null);
+  const seznamRef = useRef<HTMLDetailsElement>(null);
+  /* Seznam řádků je ve výchozím stavu sbalený; odkazy na něj (Zkontrolovat,
+     vyúčtování ve statistice) ho otevřou a sjedou k němu. */
+  const [seznamOtevren, setSeznamOtevren] = useState(false);
+  const ukazSeznam = () => {
+    setSeznamOtevren(true);
+    window.setTimeout(() => seznamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
 
   // deno-lint-ignore no-explicit-any
   const db = supabase as any;
@@ -635,7 +642,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                     onClick={() => {
                       setFiltr("kontrola");
                       setVse(false);
-                      seznamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      ukazSeznam();
                     }}
                   >
                     Zkontrolovat
@@ -713,11 +720,15 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 onVyber={(id) => {
                   setFiltr(id);
                   setVse(false);
-                  seznamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  ukazSeznam();
                 }}
               />
 
-              <div ref={seznamRef} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <details ref={seznamRef} open={seznamOtevren} onToggle={(e) => setSeznamOtevren((e.currentTarget as HTMLDetailsElement).open)} style={{ marginBottom: 16 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>
+                Řádky provizí · {zobrazene.length} {zobrazene.length === 1 ? "řádek" : zobrazene.length >= 2 && zobrazene.length <= 4 ? "řádky" : "řádků"}
+              </summary>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
                 <select
                   value={String(filtr)}
                   onChange={(e) => {
@@ -863,6 +874,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                   Zobrazit všech {zobrazene.length}
                 </button>
               )}
+              </details>
             </>
           )}
         </>
