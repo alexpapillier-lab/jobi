@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { jePolozkaBezZakazky } from "../../lib/provizeRucni";
 
 /**
  * Přehled provizí: hlavní čísla, provize po měsících a tabulka vyúčtování.
@@ -9,7 +10,7 @@ import { formatCurrency } from "../../lib/invoiceMath";
  * nejvyšší a poslední měsíc, zbytek je v bublině po najetí a v tabulce.
  */
 
-export type StatPolozka = { poradi: number; zaklad: number; provize: number; zapsano_at: string; vyrazeno: boolean; vyuctovani_id: number | null };
+export type StatPolozka = { kod?: string; poradi: number; zaklad: number; provize: number; zapsano_at: string; vyrazeno: boolean; vyuctovani_id: number | null };
 export type StatVyuctovani = { id: number; oznaceni: string; pocet: number; soucet_zaklad: number; soucet_provize: number; importovano: boolean; created_at: string; vyplaceno_at: string | null };
 
 const kc = (n: number) => formatCurrency(Number(n) || 0, "CZK");
@@ -40,7 +41,8 @@ export function poMesicich(polozky: StatPolozka[], ted: Date, kolik = 12): Mesic
     if (!m) continue;
     m.provize += Number(p.provize) || 0;
     m.zaklad += Number(p.zaklad) || 0;
-    if (p.poradi === 0) m.pocet += 1;
+    // Ruční a měsíční řádky nejsou zakázky – do počtu zakázek nepatří.
+    if (p.poradi === 0 && !jePolozkaBezZakazky(p.kod)) m.pocet += 1;
   }
   return mesice;
 }
@@ -74,10 +76,11 @@ export function ProvizeStatistiky({
   const platne = polozky.filter((p) => !p.vyrazeno);
   const letos = platne.filter((p) => new Date(p.zapsano_at).getFullYear() === ted.getFullYear());
   const provizeLetos = letos.reduce((s, p) => s + Number(p.provize), 0);
-  const zakazekLetos = letos.filter((p) => p.poradi === 0).length;
+  const zakazekLetos = letos.filter((p) => p.poradi === 0 && !jePolozkaBezZakazky(p.kod)).length;
   const mesicuSDaty = new Set(letos.map((p) => new Date(p.zapsano_at).getMonth())).size;
-  const celkem = platne.reduce((s, p) => s + Number(p.provize), 0);
-  const zakazekCelkem = platne.filter((p) => p.poradi === 0 && Number(p.zaklad) > 0).length;
+  // Průměr na zakázku jen ze zakázek: ruční dluh nebo předplatné by ho zkreslily.
+  const celkem = platne.filter((p) => !jePolozkaBezZakazky(p.kod)).reduce((s, p) => s + Number(p.provize), 0);
+  const zakazekCelkem = platne.filter((p) => p.poradi === 0 && Number(p.zaklad) > 0 && !jePolozkaBezZakazky(p.kod)).length;
   const posledni = vyuctovani[0] ?? null;
   const nevyplacena = vyuctovani.filter((v) => !v.vyplaceno_at);
   const cekaNaVyplaceni = nevyplacena.reduce((s, v) => s + Number(v.soucet_provize), 0);

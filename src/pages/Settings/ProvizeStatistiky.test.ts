@@ -27,3 +27,12 @@ describe("poMesicich", () => {
     expect(m.reduce((s, x) => s + x.provize, 0)).toBe(220); // rok 2024 je mimo okno
   });
 });
+
+describe("ruční a měsíční řádky nejsou zakázky", () => {
+  it("do počtu zakázek za měsíc nepatří, provize se ale sčítá", () => {
+    const ted = new Date(2026, 10, 15);
+    const m = poMesicich([p("2026-11-02T10:00:00Z", 100, { kod: "IRP26000001" }), p("2026-11-03T10:00:00Z", -6000, { kod: "RUCNI-1" }), p("2026-11-04T10:00:00Z", 326.43, { kod: "MESICNI-2026-11" })], ted, 1);
+    expect(m[0].pocet).toBe(1);
+    expect(m[0].provize).toBeCloseTo(100 - 6000 + 326.43, 2);
+  });
+});

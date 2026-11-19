@@ -10,6 +10,7 @@ import { seznamVyloucenych, textVyloucenych } from "../../lib/provizeVylouceneOp
 import { maNejasneOpravy, prectiCastku, rozhodnuti, type RozhodnutiProvize } from "../../lib/provizeKontrola";
 import { useAuth } from "../../auth/AuthProvider";
 import { ProvizeStatistiky } from "./ProvizeStatistiky";
+import { ctiRucniCastku, jePolozkaBezZakazky, jeRucniPolozka, kodRucni } from "../../lib/provizeRucni";
 import { jeMesicPripsan, kodMesicni, nactiKurzCnb, poznamkaPrepoctu, prepocetNaKc, type KurzCnb } from "../../lib/provizeMesicni";
 
 import { textChyby } from "../../utils/errorNormalizer";
@@ -124,6 +125,9 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [kurz, setKurz] = useState<KurzCnb | null>(null);
   const [chybaKurzu, setChybaKurzu] = useState<string | null>(null);
   const [pripisuji, setPripisuji] = useState(false);
+  const [rucniCastka, setRucniCastka] = useState("");
+  const [rucniPopis, setRucniPopis] = useState("");
+  const [rucniUklada, setRucniUklada] = useState(false);
   const [posilamMail, setPosilamMail] = useState<number | null>(null);
   const { session } = useAuth();
   const [formStatusy, setFormStatusy] = useState<string[]>([]);
@@ -396,6 +400,46 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     await nacti(serviceId, false);
   };
 
+  /** Ruční položka: + k vyplacení, − dluh. Jde do dalšího vyúčtování jako ostatní řádky. */
+  const pridatRucni = async (znamenko: 1 | -1) => {
+    if (!db || !serviceId || rucniUklada) return;
+    const castka = ctiRucniCastku(rucniCastka);
+    const popis = rucniPopis.trim();
+    if (castka === null) { showToast("Zadejte částku (kladné číslo).", "error"); return; }
+    if (!popis) { showToast("Napište, za co to je (poznámka).", "error"); return; }
+    setRucniUklada(true);
+    const { error } = await db.from("provize_polozky").insert({
+      service_id: serviceId,
+      zakazka_kod: kodRucni(),
+      poradi: 0,
+      zaklad: 0,
+      sazba: null,
+      provize: znamenko * castka,
+      status: "Ruční položka",
+      poznamka: popis,
+    });
+    setRucniUklada(false);
+    if (error) {
+      showToast(`Přidání selhalo: ${error.message}`, "error");
+      return;
+    }
+    setRucniCastka("");
+    setRucniPopis("");
+    showToast(`${znamenko > 0 ? "Připsáno" : "Odečteno"} ${kc(castka)} – půjde do dalšího vyúčtování.`, "success");
+    await nacti(serviceId, false);
+  };
+
+  /** Smazat nevyúčtovanou ruční nebo měsíční položku (omyl v částce). */
+  const smazatRucni = async (p: Polozka) => {
+    if (!db || p.vyuctovani_id !== null || !jePolozkaBezZakazky(p.kod)) return;
+    const { error } = await db.from("provize_polozky").delete().eq("id", p.id).is("vyuctovani_id", null);
+    if (error) {
+      showToast(`Smazání selhalo: ${error.message}`, "error");
+      return;
+    }
+    await nacti(serviceId, false);
+  };
+
   const prepniVyrazeni = async (p: Polozka) => {
     if (!db) return;
     const { error } = await db.from("provize_polozky").update({ vyrazeno: !p.vyrazeno }).eq("id", p.id);
@@ -646,6 +690,19 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 </div>
               )}
 
+              <details style={{ marginBottom: 16, border, borderRadius: 12, padding: "10px 14px" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Ruční položka k vyplacení</summary>
+                <div style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0" }}>
+                  Přičíst částku, kterou ti servis dluží (zaplacené předplatné), nebo odečíst dluh (vzal jsem iPhone od servisu). Půjde do dalšího vyúčtování, nevyúčtovanou jde smazat.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <input value={rucniCastka} onChange={(e) => setRucniCastka(e.target.value)} placeholder="Částka v Kč" inputMode="decimal" aria-label="Částka ruční položky" style={{ ...pole, width: 130 }} onKeyDown={(e) => { if (e.key === "Enter") void pridatRucni(1); }} />
+                  <input value={rucniPopis} onChange={(e) => setRucniPopis(e.target.value)} placeholder="Za co (např. iPhone 13 od servisu)" aria-label="Poznámka ruční položky" maxLength={200} style={{ ...pole, flex: "1 1 220px", minWidth: 0 }} onKeyDown={(e) => { if (e.key === "Enter") void pridatRucni(1); }} />
+                  <button type="button" style={primarni} disabled={rucniUklada} onClick={() => void pridatRucni(1)}>+ Připsat</button>
+                  <button type="button" style={{ ...tlacitko, color: "var(--danger, #dc2626)" }} disabled={rucniUklada} onClick={() => void pridatRucni(-1)}>− Odečíst</button>
+                </div>
+              </details>
+
               <ProvizeStatistiky
                 polozky={data.polozky}
                 vyuctovani={data.vyuctovani}
@@ -708,13 +765,13 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                       <Fragment key={p.id}>
                       <tr style={{ opacity: p.vyrazeno && !p.ke_kontrole ? 0.5 : 1, background: p.ke_kontrole ? "var(--warning-soft, rgba(245,158,11,0.08))" : undefined }}>
                         <td style={{ padding: "7px 10px", borderBottom: rozbaleno ? "none" : border, fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {p.kod}
+                          {jeRucniPolozka(p.kod) ? "Ruční položka" : p.kod}
                           {p.poradi > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>doplatek</span>}
                           {p.ke_kontrole && p.vyuctovani_id === null && (
                             <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--warning-text, #b45309)" }}>ke kontrole</span>
                           )}
                         </td>
-                        <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.zarizeni ?? undefined}>{p.zarizeni ?? "—"}</td>
+                        <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={(jeRucniPolozka(p.kod) ? p.poznamka : p.zarizeni) ?? undefined}>{jeRucniPolozka(p.kod) ? p.poznamka ?? "—" : p.zarizeni ?? "—"}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)" }}>{p.stav_ted ?? p.status ?? "—"}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, whiteSpace: "nowrap" }}>
                           {kc(p.zaklad)}
@@ -725,7 +782,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                         <td style={{ padding: "7px 10px", borderBottom: border, whiteSpace: "nowrap", fontWeight: 700 }}>{kc(p.provize)}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", whiteSpace: "nowrap" }}>{datum(p.zapsano_at)}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                          {p.vyuctovani_id !== null ? oznaceniPodleId.get(p.vyuctovani_id) ?? "ano" : p.vyrazeno ? `vyřazeno${p.poznamka ? ` (${p.poznamka})` : ""}` : "—"}
+                          {p.vyuctovani_id !== null ? oznaceniPodleId.get(p.vyuctovani_id) ?? "ano" : jePolozkaBezZakazky(p.kod) ? "—" : p.vyrazeno ? `vyřazeno${p.poznamka ? ` (${p.poznamka})` : ""}` : "—"}
                         </td>
                         <td style={{ padding: "7px 10px", borderBottom: rozbaleno ? "none" : border, textAlign: "right" }}>
                           {p.vyuctovani_id === null && (
@@ -758,7 +815,12 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                                   {p.pocitat_vse ? "Zase vyloučit" : "Započítat plně"}
                                 </button>
                               )}
-                              {!jeVyloucena(p) && !nejasna && (
+                              {jePolozkaBezZakazky(p.kod) && (
+                                <button type="button" style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }} title="Smazat položku (ještě není vyúčtovaná)" onClick={() => void smazatRucni(p)}>
+                                  Smazat
+                                </button>
+                              )}
+                              {!jeVyloucena(p) && !nejasna && !jePolozkaBezZakazky(p.kod) && (
                                 <button type="button" style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }} onClick={() => prepniVyrazeni(p)}>
                                   {p.vyrazeno ? "Vrátit" : "Vyřadit"}
                                 </button>
