@@ -24,7 +24,7 @@ export function jePolozkaBezZakazky(kod: string | null | undefined): boolean {
 
 /** Částka z pole („6 000“, „6000,50“): kladné číslo, jinak null. Znaménko určuje tlačítko. */
 export function ctiRucniCastku(text: string): number | null {
-  const t = text.replace(/[\s ]|Kč/gi, "").replace(",", ".").replace(/^[+-]/, "");
+  const t = text.replace(/[\s\u00a0]|Kč/gi, "").replace(",", ".").replace(/^[+-]/, "");
   if (!/^\d*\.?\d+$/.test(t)) return null;
   const n = Math.round(Number(t) * 100) / 100;
   return n > 0 && n < 10_000_000 ? n : null;
