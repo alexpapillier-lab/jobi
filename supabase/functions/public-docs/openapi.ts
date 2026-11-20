@@ -1019,6 +1019,13 @@ export const POPIS = {
                         "format": "uuid"
                       },
                       "description": "Jen modely, které jsou samy veřejné. Oprava, která\nzbyla bez jediného veřejného modelu, se neposílá vůbec.\n"
+                    },
+                    "model_order": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Pozice opravy v seznamu konkrétního modelu: klíč je id modelu.\nSeznam `repairs` je řazený společně; opravy skupinované podle modelu\nseřaďte podle tohoto čísla (model bez klíče = pořadí v seznamu `repairs`).\n"
                     }
                   }
                 }

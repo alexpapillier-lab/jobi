@@ -81,6 +81,15 @@ serve((req) => {
         });
       });
 
+      // Pořadí oprav u modelu: vlastní pozice (model_order), jinak pořadí v seznamu.
+      Object.keys(skupiny).forEach(function (mid) {
+        skupiny[mid] = skupiny[mid].map(function (o, i) { return { o: o, i: i }; }).sort(function (a, b) {
+          var pa = a.o.model_order && a.o.model_order[mid] !== undefined ? a.o.model_order[mid] : 1e9;
+          var pb = b.o.model_order && b.o.model_order[mid] !== undefined ? b.o.model_order[mid] : 1e9;
+          return pa - pb || a.i - b.i;
+        }).map(function (x) { return x.o; });
+      });
+
       var poradi = data.models.map(function (m) { return m.id; }).filter(function (id) { return skupiny[id]; });
       if (skupiny["_"]) { poradi.push("_"); }
       if (!poradi.length) { text(cil, "Ceník je zatím prázdný."); return; }

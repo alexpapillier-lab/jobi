@@ -3,6 +3,7 @@
  * sklad pro otevřenou zakázku (produkty, rezervace, objednávky u dodavatele).
  * Vyneseno z Orders.tsx beze změny obsahu; názvy stavů zůstávají.
  */
+import { seradPodleModelu } from "../../../lib/poradiOprav";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { loadDevicesFromDb } from "../../../lib/devicesDb";
@@ -137,7 +138,11 @@ export function useKatalogASklad(activeServiceId: string | null, detailId: strin
       );
       const modelIds = matchingModels.map((m) => m.id).filter(Boolean);
       if (modelIds.length === 0) return [];
-      return devicesData.repairs.filter((r) => r && r.modelIds && r.modelIds.some((mid: string) => modelIds.includes(mid)));
+      // V pořadí, jaké má oprava u modelu zařízení (Zařízení → opravy → šipky u modelu).
+      return seradPodleModelu(
+        devicesData.repairs.filter((r) => r && r.modelIds && r.modelIds.some((mid: string) => modelIds.includes(mid))),
+        modelIds,
+      );
     },
     [devicesData]
   );

@@ -104,7 +104,7 @@ serve(async (req) => {
     svc.from("device_categories").select("id, brand_id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     svc.from("device_models").select("id, category_id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     // costs se nevybírá záměrně
-    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids, public_hidden_model_ids").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
+    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids, public_hidden_model_ids, model_order").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
   ]);
 
   // Když dotaz selže, .data je null a bez tohohle by ven odešel prázdný,
@@ -128,6 +128,17 @@ serve(async (req) => {
       Array.isArray(r.public_hidden_model_ids) ? (r.public_hidden_model_ids as string[]) : [],
     );
     return vsechny.filter((id) => idModelu.has(id) && !vyjimky.has(id));
+  };
+
+  /** {modelId: pozice} jen pro veřejné modely opravy. */
+  const poradiModelu = (v: unknown, modelIds: string[]): Record<string, number> => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+    const out: Record<string, number> = {};
+    for (const id of modelIds) {
+      const n = (v as Record<string, unknown>)[id];
+      if (typeof n === "number" && Number.isFinite(n)) out[id] = n;
+    }
+    return out;
   };
 
   const platce = servis.vat_payer !== false;
@@ -158,6 +169,10 @@ serve(async (req) => {
         estimated_time_label: popisCasu(r.estimated_time),
         details: r.details ?? "",
         model_ids: modelIds,
+        // Pozice opravy v seznamu konkrétního modelu. Seznam `repairs` je
+        // řazený společně; kdo opravy skupinuje podle modelu, seřadí je podle
+        // tohohle (model bez klíče = pořadí v seznamu).
+        model_order: poradiModelu(r.model_order, modelIds),
       };
     }),
     generated_at: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { posunVPoradi, presunKPolozce } from "../lib/poradiSeznamu";
+import { poradiVModelu, posunVModelu, presunVModelu } from "../lib/poradiOprav";
 import { useEntitlements } from "../hooks/useEntitlements";
 import { Button, Card, PageHeader } from "../components/ui";
 import { DeviceIcon, DownloadIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
@@ -767,7 +768,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
   const filteredRepairs = useMemo(() => {
     const q = repairSearchQuery.trim().toLowerCase();
     const modelName = new Map(data.models.map((m) => [m.id, m.name.toLowerCase()]));
-    return data.repairs.filter((r) => {
+    const vyfiltrovane = data.repairs.filter((r) => {
       if (scopeModelIds && !r.modelIds?.some((m) => scopeModelIds.has(m))) return false;
       if (!q) return true;
       return (
@@ -776,7 +777,9 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         (r.modelIds ?? []).some((m) => modelName.get(m)?.includes(q))
       );
     });
-  }, [data.repairs, data.models, scopeModelIds, repairSearchQuery]);
+    // U jednoho modelu platí jeho vlastní pořadí; u kategorie a značky společné.
+    return selection?.kind === "model" ? poradiVModelu(vyfiltrovane, selection.id) : vyfiltrovane;
+  }, [data.repairs, data.models, scopeModelIds, repairSearchQuery, selection]);
 
   /** „Apple › iPhone › iPhone 13“ pro tlačítko na úzké obrazovce. */
   const crumbText = useMemo(() => {
@@ -1214,8 +1217,13 @@ DETALY: Výměna opotřebované baterie
   };
 
   /** Šipky u opravy: posun v zobrazeném seznamu, uloží se jako order_index (pořadí v API i na webu). */
-  const posunoutOpravu = (id: string, smer: -1 | 1) => ulozitPoradiOprav(posunVPoradi(data.repairs, filteredRepairs, id, smer));
-  const pustitOpravu = (id: string, cilId: string, za: boolean) => ulozitPoradiOprav(presunKPolozce(data.repairs, id, cilId, za));
+  /* U vybraného modelu se pořadí mění jen pro tenhle model (oprava sdílená
+     s jinými modely u nich zůstane, kde byla); u kategorie a značky platí
+     společné pořadí celého ceníku. */
+  const posunoutOpravu = (id: string, smer: -1 | 1) =>
+    ulozitPoradiOprav(selection?.kind === "model" ? posunVModelu(data.repairs, selection.id, filteredRepairs, id, smer) : posunVPoradi(data.repairs, filteredRepairs, id, smer));
+  const pustitOpravu = (id: string, cilId: string, za: boolean) =>
+    ulozitPoradiOprav(selection?.kind === "model" ? presunVModelu(data.repairs, selection.id, id, cilId, za) : presunKPolozce(data.repairs, id, cilId, za));
   /* Jen do stavu – uloží odložené uložení (500 ms), takže víc přetažení
      za sebou jde do databáze jedním zápisem a ve správném pořadí. */
   const ulozitPoradiOprav = (repairs: Repair[] | null) => {

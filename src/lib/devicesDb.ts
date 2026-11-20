@@ -46,6 +46,8 @@ export type Repair = {
   publicHiddenModelIds?: string[];
   /** Vlastní záruka na opravu v měsících (repairs.warranty_months); null = výchozí servisu, 0 = bez záruky. */
   warrantyMonths?: number | null;
+  /** Pořadí opravy v seznamu konkrétního modelu {modelId: pozice} (repairs.model_order); bez klíče platí společné pořadí. */
+  modelOrder?: Record<string, number>;
 };
 
 export type DevicesData = {
@@ -80,6 +82,7 @@ function mapRepairRow(r: {
   public_visible?: boolean;
   public_hidden_model_ids?: unknown;
   warranty_months?: number | null;
+  model_order?: unknown;
 }): Repair {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const productIds = Array.isArray(r.product_ids) ? (r.product_ids as string[]) : undefined;
@@ -98,7 +101,16 @@ function mapRepairRow(r: {
       ? (r.public_hidden_model_ids as string[])
       : [],
     warrantyMonths: typeof r.warranty_months === "number" ? r.warranty_months : null,
+    modelOrder: nactiPoradiModelu(r.model_order),
   };
+}
+
+/** {modelId: pozice} z JSON sloupce; cokoli jiného (starší server) = bez vlastního pořadí. */
+function nactiPoradiModelu(v: unknown): Record<string, number> | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (typeof n === "number" && Number.isFinite(n)) out[k] = n;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -106,7 +118,7 @@ function mapRepairRow(r: {
  * Čtení i zápis se při chybě „column … does not exist“ zopakují bez nich –
  * jinak by po nasazení klienta před migrací zmizel celý ceník.
  */
-const NOVE_SLOUPCE_OPRAV = ["warranty_months"] as const;
+const NOVE_SLOUPCE_OPRAV = ["warranty_months", "model_order"] as const;
 const ZAKLADNI_SLOUPCE_OPRAV = "id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible, public_hidden_model_ids";
 
 function jeChybaChybejicihoSloupce(err: { code?: string; message?: string } | null | undefined): boolean {
@@ -269,6 +281,7 @@ async function ulozDevicesToDb(serviceId: string | null, data: DevicesData): Pro
       public_visible: r.publicVisible !== false,
       public_hidden_model_ids: r.publicHiddenModelIds ?? [],
       warranty_months: r.warrantyMonths ?? null,
+      model_order: r.modelOrder ?? {},
       order_index: i,
       created_at: r.createdAt,
     }));
