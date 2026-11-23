@@ -142,7 +142,7 @@ function embedSkript(slug: string): string {
       var kat = {}; (cenik.categories || []).forEach(function (c) { kat[c.id] = c; });
       var m = pole("Model z ceníku", "select", "", false); modelSel = m.vstup;
       modelSel.appendChild(el("option", { value: "", text: "– vyberte model (nepovinné) –" }));
-      cenik.models.forEach(function (mo) { var k = kat[mo.category_id] || {}; var z = znacky[k.brand_id]; modelSel.appendChild(el("option", { value: mo.id, text: (z ? z + " " : "") + mo.name })); });
+      cenik.models.forEach(function (mo) { var k = kat[mo.category_id] || {}; var z = znacky[k.brand_id]; modelSel.appendChild(el("option", { value: mo.id, text: (z && mo.name.toLowerCase().indexOf(z.toLowerCase() + " ") !== 0 ? z + " " : "") + mo.name })); });
       var o = pole("Oprava z ceníku", "select", "", false); opravaSel = o.vstup;
       o.obal.hidden = true;
       modelSel.addEventListener("change", function () {

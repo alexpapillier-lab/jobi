@@ -7,6 +7,7 @@ import { seradPodleModelu } from "../../../lib/poradiOprav";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { loadDevicesFromDb } from "../../../lib/devicesDb";
+import { nazevSeZnackou } from "../../../lib/nazevZarizeni";
 import { loadInventoryFromDb, type Product as SkladProdukt } from "../../../lib/inventoryDb";
 import { loadReservations, loadTicketOrderItems, type TicketOrderItem } from "../../../lib/purchaseOrders";
 import { safeLoadDevicesData, type DevicesData, type InventoryData, type DeviceRepair } from "../../../lib/catalogStorage";
@@ -121,7 +122,7 @@ export function useKatalogASklad(activeServiceId: string | null, detailId: strin
           ...model,
           categoryName,
           brandName,
-          fullName: brand ? `${brand.name} ${model.name}` : model.name,
+          fullName: nazevSeZnackou(brand?.name, model.name),
         } satisfies ModelWithHierarchy;
       })
       .filter((m): m is ModelWithHierarchy => m !== null);

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Button, Label } from "../../components/ui";
 import { CheckIcon, XIcon } from "../../components/icons";
 import type { Warehouse } from "../../lib/inventoryDb";
+import { nazevSeZnackou } from "../../lib/nazevZarizeni";
 import { InventoryDialog } from "./InventoryDialog";
 
 type RestockProduct = {
@@ -98,7 +99,7 @@ export function RestockDialog({
         if (!model) return null;
         const category = devices.categories.find((c) => c.id === model.categoryId);
         const brand = category ? devices.brands.find((b) => b.id === category.brandId) : null;
-        return brand ? `${brand.name} ${model.name}` : model.name;
+        return nazevSeZnackou(brand?.name, model.name);
       })
       .filter(Boolean) as string[];
 
