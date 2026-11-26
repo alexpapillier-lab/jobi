@@ -12,7 +12,8 @@ import type React from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/ui";
 import { SectionHeading } from "../../components/SectionHeading";
-import { CameraIcon, ChevronDownIcon, SearchIcon, UserIcon, XIcon } from "../../components/icons";
+import { CameraIcon, ChevronDownIcon, DeviceIcon, SearchIcon, UserIcon, XIcon } from "../../components/icons";
+import { ZapujckaKarta } from "../../components/orders/ZapujckaKarta";
 import { CustomerAutocomplete, type CustomerMatch } from "../../components/orders";
 import { FotkaZakazky } from "../../components/FotkaZakazky";
 import { VyberFotek } from "../../components/orders/VyberFotek";
@@ -26,6 +27,8 @@ import type { Branch } from "../../lib/branches";
 import type { DeviceRepair } from "../../lib/catalogStorage";
 import type { KdyOdmenyText, PravidloOdmeny } from "../../lib/odmeny";
 import type { PrednastavenaSleva } from "../../lib/prednastaveneSlevy";
+import type { NahradniZarizeni } from "../../lib/zapujcka";
+import type { SkrytelnaSekce } from "../../lib/sekceDetailu";
 import type { ModelWithHierarchy, NewOrderDraft, ShodaZakaznika, TicketEx } from "./typy";
 import { formatIco, formatPhoneNumber, formatZipCode } from "./formatovani";
 import { border, borderError, card, fieldLabel, fieldHint, fieldMuted, subHeading, baseFieldInput, baseFieldTextArea } from "./styly";
@@ -97,6 +100,10 @@ type Props = {
   setCaptureQRItems: React.Dispatch<React.SetStateAction<Array<{ deviceLabel: string; url: string }> | null>>;
   captureQRLoading: boolean;
   setCaptureQRLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Seznam náhradních zařízení servisu (Nastavení → Zakázky) a co je právě půjčené – pro výběr zápůjčky už při příjmu. */
+  nahradniZarizeni: NahradniZarizeni[];
+  pujceneKusy: { id: string; code: string | null; katalogId: string }[];
+  skryteSekce: Set<SkrytelnaSekce>;
 };
 
 export function NovaZakazkaPanel({
@@ -162,6 +169,9 @@ export function NovaZakazkaPanel({
   setCaptureQRItems,
   captureQRLoading,
   setCaptureQRLoading,
+  nahradniZarizeni,
+  pujceneKusy,
+  skryteSekce,
 }: Props) {
   return createPortal(
     <>
@@ -581,6 +591,22 @@ export function NovaZakazkaPanel({
         setNewOrderDeviceMoreOpen={setNewOrderDeviceMoreOpen}
         cloudTickets={cloudTickets}
       />
+
+      {/* ===== NÁHRADNÍ ZAŘÍZENÍ – zápůjčka už při příjmu, smlouva se vytiskne po založení ===== */}
+      {!skryteSekce.has("nahradni") && (
+        <div style={{ ...card, ...stylSekce("nahradni") }}>
+          <SectionHeading icon={<DeviceIcon size={16} />} size="sm" barva={BARVA_SEKCE.nahradni}>Náhradní zařízení</SectionHeading>
+          <ZapujckaKarta
+            priZalozeni
+            zapujcka={newDraft.zapujcka ?? undefined}
+            onChange={(z) => setNewDraft((p) => ({ ...p, zapujcka: z }))}
+            katalog={nahradniZarizeni}
+            branchId={hasBranches ? (newDraft.branchId ?? branchForNew?.id ?? null) : null}
+            nazevPobocky={(id) => branches.find((b) => b.id === id)?.name ?? "jiná pobočka"}
+            pujcenaJinde={Object.fromEntries(pujceneKusy.map((p) => [p.katalogId, p.code ?? "jiná zakázka"]))}
+          />
+        </div>
+      )}
 
       {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
       <div style={{ ...card, ...stylSekce("diagnostika"), padding: 0, overflow: "hidden" }}>

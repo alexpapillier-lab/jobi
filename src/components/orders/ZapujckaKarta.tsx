@@ -13,6 +13,7 @@ export function ZapujckaKarta({
   zapujcka,
   onChange,
   onTisk,
+  priZalozeni = false,
   katalog = [],
   pujcenaJinde = {},
   branchId = null,
@@ -20,7 +21,10 @@ export function ZapujckaKarta({
 }: {
   zapujcka: ZapujckaData | undefined;
   onChange: (zapujcka: ZapujckaData | null) => void;
-  onTisk: () => void;
+  /** Tisk smlouvy; bez něj (při zakládání zakázky) se tlačítko nezobrazí. */
+  onTisk?: () => void;
+  /** Formulář nové zakázky: zakázka ještě není, smlouva se vytiskne po založení, „vráceno“ nedává smysl. */
+  priZalozeni?: boolean;
   /** Náhradní zařízení servisu ze Nastavení – vyplní formulář jedním výběrem. */
   katalog?: NahradniZarizeni[];
   /** id položky katalogu → kód zakázky, u které je zařízení právě půjčené. */
@@ -105,10 +109,12 @@ export function ZapujckaKarta({
             Půjčeno dne
             <input type="date" value={navrh.pujceno} onChange={(e) => setNavrh({ ...navrh, pujceno: e.target.value })} style={input} />
           </label>
-          <label style={stitek}>
-            Vráceno dne
-            <input type="date" value={navrh.vraceno ?? ""} onChange={(e) => setNavrh({ ...navrh, vraceno: e.target.value || null })} style={input} />
-          </label>
+          {!priZalozeni && (
+            <label style={stitek}>
+              Vráceno dne
+              <input type="date" value={navrh.vraceno ?? ""} onChange={(e) => setNavrh({ ...navrh, vraceno: e.target.value || null })} style={input} />
+            </label>
+          )}
         </div>
         <label style={stitek}>
           Poznámka (stav zařízení při půjčení, dohodnuté podmínky)
@@ -132,7 +138,7 @@ export function ZapujckaKarta({
               setUpravuji(false);
             }}
           >
-            Uložit půjčení
+            {priZalozeni ? "Přidat k zakázce" : "Uložit půjčení"}
           </Button>
         </div>
       </div>
@@ -144,7 +150,9 @@ export function ZapujckaKarta({
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <Button size="sm" variant="soft" onClick={zacitUpravu}>Půjčit náhradní zařízení</Button>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
-          {katalog.length > 0
+          {priZalozeni
+            ? "Smlouva o zápůjčce se vytiskne po založení zakázky."
+            : katalog.length > 0
             ? `Vyberete ze seznamu servisu (${katalog.length}) nebo vyplníte ručně; vytiskne se smlouva o zápůjčce.`
             : "Zapíše se, co si zákazník odnáší, a vytiskne se smlouva o zápůjčce. Stálý seznam zařízení jde sepsat v Nastavení → Zakázky → Náhradní zařízení."}
         </span>
@@ -175,8 +183,8 @@ export function ZapujckaKarta({
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <Button size="sm" variant="soft" onClick={onTisk}>Smlouva o zápůjčce</Button>
-          {!vraceno && (
+          {onTisk && <Button size="sm" variant="soft" onClick={onTisk}>Smlouva o zápůjčce</Button>}
+          {!vraceno && !priZalozeni && (
             <Button size="sm" variant="primary" onClick={() => onChange({ ...zapujcka, vraceno: dnesDatum() })}>Vráceno</Button>
           )}
           <Button size="sm" variant="ghost" onClick={zacitUpravu}>Upravit</Button>

@@ -183,6 +183,8 @@ export type NewOrderDraft = {
   rezervaceId?: string;
   /** Objednávka z webu (web_objednavky), ze které zakázka vzniká – po založení se převede (webhook order.converted). */
   objednavkaId?: string;
+  /** Náhradní zařízení půjčené hned při příjmu – uloží se k první zakázce a vytiskne se smlouva. */
+  zapujcka?: ZapujckaData | null;
 };
 export type ModelWithHierarchy = DeviceModel & {
   fullName: string;

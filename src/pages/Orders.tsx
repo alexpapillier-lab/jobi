@@ -80,6 +80,7 @@ import {
   runWebDocument,
   runDesktopDocument,
   printTicket,
+  printZapujcku,
   printWarranty,
   printDiagnosticProtocol,
   exportDiagnosticProtocolToPDF,
@@ -997,7 +998,7 @@ export default function Orders({
   const [pujceneKusy, setPujceneKusy] = useState<{ id: string; code: string | null; katalogId: string }[]>([]);
   useEffect(() => {
     // Servis bez seznamu náhradních zařízení nemá co půjčovat – ani se neptáme.
-    if (!detailId || !activeServiceId || !supabase || nahradniZarizeni.length === 0) return;
+    if ((!detailId && !isNewOpen) || !activeServiceId || !supabase || nahradniZarizeni.length === 0) return;
     let zruseno = false;
     void (supabase.from("tickets") as any)
       .select("id,code,loaner")
@@ -1016,7 +1017,7 @@ export default function Orders({
     return () => {
       zruseno = true;
     };
-  }, [detailId, activeServiceId, nahradniZarizeni.length]);
+  }, [detailId, isNewOpen, activeServiceId, nahradniZarizeni.length]);
 
   // After detailedTicket exists: sync ref so SMS OS notifications skip this thread when panel is open
   useEffect(() => {
@@ -1882,7 +1883,8 @@ export default function Orders({
         }
         const config = await loadDocumentsConfigFromDB(activeServiceId);
         if (first && config?.autoPrint?.ticketListOnCreate) {
-          printTicket(first, activeServiceId).then(() => {});
+          // Zápůjčka zadaná při příjmu: smlouva se tiskne hned za zakázkovým listem.
+          printTicket(first, activeServiceId).then(() => (first.loaner ? printZapujcku(first, activeServiceId) : undefined));
         }
         if (first && config?.autoPrint?.warrantyOnCreate) {
           printWarranty(first, activeServiceId).then(() => {});
@@ -2218,6 +2220,9 @@ export default function Orders({
         setCaptureQRItems={setCaptureQRItems}
         captureQRLoading={captureQRLoading}
         setCaptureQRLoading={setCaptureQRLoading}
+        nahradniZarizeni={nahradniZarizeni}
+        pujceneKusy={pujceneKusy}
+        skryteSekce={skryteSekce}
       />
 
       {/* ===== Full detail modal (portal do body, aby fixed byl vůči viewportu, ne main s transform) ===== */}

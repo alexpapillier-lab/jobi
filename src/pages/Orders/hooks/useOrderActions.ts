@@ -444,6 +444,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           // Sleva zadaná u zařízení při příjmu (DeviceRow.discountType); starší koncept ji měl na celé zakázce.
           discount_type: dev.discountType ?? (newDraft as any).discountType ?? null,
           discount_value: dev.discountType ? (dev.discountValue ?? null) : ((newDraft as any).discountValue ?? null),
+          // Zápůjčka zadaná při příjmu patří k první zakázce (náhradní kus je jen jeden).
+          loaner: i === 0 ? (newDraft.zapujcka ?? null) : null,
         };
 
         const { data, error } = await (supabase
