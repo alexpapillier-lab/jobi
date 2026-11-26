@@ -10,6 +10,7 @@ import type { WebObjednavka } from "../../lib/objednavky";
 import type { PerformedRepair } from "../../components/orders/types";
 import type { KontrolaPoOpraveData } from "../../lib/kontrolniSeznamy";
 import type { ZapujckaData } from "../../lib/zapujcka";
+import type { NastaveniPokladny } from "../../lib/pokladna";
 import type { PortalTicketFields } from "../../lib/portal";
 import type { ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 import type { DeviceModel } from "../../lib/catalogStorage";
@@ -45,6 +46,8 @@ export type OrdersProps = {
   onOpenClaimIntentConsumed?: () => void;
 
   onOpenCustomer?: (customerId: string) => void;
+  /** Nastavení pokladny, když je modul zapnutý a člen ji smí používat – v detailu zakázky pak je tlačítko „Zaplatit“. */
+  pokladna?: NastaveniPokladny | null;
   onReturnToPage?: (page: NavKey, customerId?: string) => void;
   onCreateInvoice?: (prefill: {
     ticketId: string;

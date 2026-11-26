@@ -34,10 +34,14 @@ import {
 } from "./tiskZakazky";
 import { technikPrace } from "../../lib/rootOwner";
 import { nazevPolozkySModelem } from "../../lib/souhrnnaFaktura";
+import type { NastaveniPokladny } from "../../lib/pokladna";
+import { ZaplatitZakazku } from "./ZaplatitZakazku";
 
 type Props = {
   isNarrow: boolean;
   activeServiceId: string | null;
+  /** Pokladna zapnutá a povolená členovi → v hlavičce je tlačítko „Zaplatit“. */
+  pokladna?: NastaveniPokladny | null;
   detailedClaim: WarrantyClaimRow | undefined;
   /** Otevřená zakázka tak, jak ji zná seznam – číslo umí i bez dotažení. */
   otevrenaZeSeznamu: TicketEx | undefined;
@@ -98,6 +102,7 @@ type Props = {
 export function DetailHlavicka({
   isNarrow,
   activeServiceId,
+  pokladna = null,
   detailedClaim,
   otevrenaZeSeznamu,
   detailedTicket,
@@ -385,6 +390,16 @@ export function DetailHlavicka({
             <Button variant="primary" onClick={startEditing} title="Upravit zakázku" data-tour="detail-upravit" icon={<EditIcon size={16} />}>
               Upravit
             </Button>
+
+            {detailedTicket && pokladna && activeServiceId && (
+              <ZaplatitZakazku
+                ticketId={detailedTicket.id}
+                serviceId={activeServiceId}
+                branchId={detailedTicket.branchId ?? null}
+                stav={detailedTicket.status ?? null}
+                nastaveni={pokladna}
+              />
+            )}
 
             {detailedTicket && canPrintExport && (
               <PrintMenu

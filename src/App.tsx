@@ -1512,6 +1512,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                   onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
                   openClaimIntent={openClaimIntent}
                   onOpenClaimIntentConsumed={() => setOpenClaimIntent(null)}
+                  pokladna={pokladnaAvailable ? nastaveniPokladny : null}
                   onOpenCustomer={(customerId) => {
                     setOpenCustomerIntent({ customerId });
                     setActivePage("customers");

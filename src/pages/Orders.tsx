@@ -146,6 +146,7 @@ export default function Orders({
   openClaimIntent,
   onOpenClaimIntentConsumed,
   onOpenCustomer,
+  pokladna = null,
   onReturnToPage,
   onCreateInvoice,
   onOpenInvoice,
@@ -2241,6 +2242,7 @@ export default function Orders({
           <DetailHlavicka
             isNarrow={isNarrow}
             activeServiceId={activeServiceId}
+            pokladna={pokladna}
             detailedClaim={detailedClaim}
             otevrenaZeSeznamu={otevrenaZeSeznamu}
             detailedTicket={detailedTicket}

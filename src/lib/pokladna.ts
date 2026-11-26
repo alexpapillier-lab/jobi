@@ -280,6 +280,8 @@ export type KZaplaceni = {
   celkem: number;
   zaplaceno: number;
   zbyva: number;
+  /** Zakázka je zaplacená fakturou (ne přes pokladnu) – další platba nedává smysl. */
+  zaplacenaFakturou?: boolean;
 };
 
 export type ZakazkaProPokladnu = {
@@ -632,12 +634,15 @@ export async function hledejZakazky(serviceId: string, dotaz: string): Promise<K
     .or(`code.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,title.ilike.%${q}%`)
     .order("created_at", { ascending: false }).limit(20);
   if (error) throw chyba(error, "Hledání se nepovedlo.");
-  const zakazky = ((data ?? []) as Record<string, unknown>[]).map(mapZakazka);
+  return zakazkyNaPolozky(serviceId, ((data ?? []) as Record<string, unknown>[]).map(mapZakazka));
+}
+
+/** Zakázky s jejich fakturou a už zaplacenou částkou jako položky k zaplacení (i zaplacené – záloha nebo doplatek dávají smysl kdykoli). */
+async function zakazkyNaPolozky(serviceId: string, zakazky: ZakazkaProPokladnu[]): Promise<KZaplaceni[]> {
   const ids = zakazky.map((z) => z.id);
   const [faktury, zaplaceno] = await Promise.all([nactiFaktury(serviceId, ids, false), zaplacenoNaZakazky(ids)]);
   const podleZakazky = new Map<string, FakturaProPokladnu>();
   for (const f of faktury) for (const t of f.ticketIds) podleZakazky.set(t, f);
-  // Při hledání se ukáže i zaplacená zakázka – záloha nebo doplatek dávají smysl kdykoli.
   return zakazky.map((t) => {
     const f = podleZakazky.get(t.id);
     const celkem = f && f.ticketIds.length === 1 ? naHalere(f.total) : cenaZakazky(t);
@@ -646,8 +651,18 @@ export async function hledejZakazky(serviceId: string, dotaz: string): Promise<K
       klic: `t:${t.id}`, ticketId: t.id, invoiceId: f && f.ticketIds.length === 1 && f.status !== "paid" ? f.id : null,
       kod: t.code ?? "", nazev: t.title?.trim() || "Zakázka", zakaznik: t.customerName ?? "", stav: t.status, branchId: t.branchId,
       celkem, zaplaceno: z, zbyva: Math.max(0, naHalere(celkem - z)),
+      zaplacenaFakturou: f?.status === "paid" && f.ticketIds.length === 1,
     };
   });
+}
+
+/** Jedna zakázka jako položka k zaplacení – pro tlačítko „Zaplatit“ přímo v detailu zakázky. */
+export async function nactiPolozkuZakazky(serviceId: string, ticketId: string): Promise<KZaplaceni | null> {
+  if (!supabase) return null;
+  const { data, error } = await db().from("tickets").select(SLOUPCE_ZAKAZKY).eq("service_id", serviceId).eq("id", ticketId).is("deleted_at", null).maybeSingle();
+  if (error) throw chyba(error, "Platbu zakázky se nepodařilo načíst.");
+  if (!data) return null;
+  return (await zakazkyNaPolozky(serviceId, [mapZakazka(data as Record<string, unknown>)]))[0] ?? null;
 }
 
 /**

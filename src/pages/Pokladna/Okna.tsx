@@ -102,6 +102,7 @@ export function PlatbaOkno({
   vychoziZpusob,
   zaokrouhlovat,
   stavPoPlatbe,
+  pokladna,
   onClose,
   onPotvrdit,
 }: {
@@ -110,6 +111,8 @@ export function PlatbaOkno({
   zaokrouhlovat: boolean;
   /** Název stavu, na který se zakázka po zaplacení přepne; null = nepřepne se. */
   stavPoPlatbe: string | null;
+  /** Název pokladny, do které se platba zapíše – ukáže se v hlavičce okna (jen když se vybírá mimo stránku Pokladna). */
+  pokladna?: string;
   onClose: () => void;
   onPotvrdit: (v: VysledekPlatby) => Promise<void>;
 }) {
@@ -166,7 +169,7 @@ export function PlatbaOkno({
   return (
     <Okno
       titulek={zaloha ? "Záloha" : "Platba"}
-      podtitulek={<>{polozka.kod ? <strong>{polozka.kod}</strong> : null}{polozka.kod ? " · " : ""}{polozka.nazev}{polozka.zakaznik ? ` · ${polozka.zakaznik}` : ""}</>}
+      podtitulek={<>{polozka.kod ? <strong>{polozka.kod}</strong> : null}{polozka.kod ? " · " : ""}{polozka.nazev}{polozka.zakaznik ? ` · ${polozka.zakaznik}` : ""}{pokladna ? ` · do pokladny ${pokladna}` : ""}</>}
       onClose={onClose}
     >
       <VolbaZpusobu value={zpusob} onChange={setZpusob} moznosti={["cash", "card", "transfer"]} />
